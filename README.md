@@ -7,10 +7,11 @@ Web tool tinh gon de cham note theo MP3 cho music game.
 1. Mo `index.html` bang trinh duyet.
 2. Bam `MP3` de chon bai nhac.
 3. Bam `Play`, click len timeline de dat note.
-4. Chon lane bang nut lane hoac phim `1` den `9`.
-5. Doi `Count` de tang/giam so lane. Tool ho tro tu 1 den 12 lane.
-6. Right click len note de xoa note gan nhat.
-7. Bam `Export JSON` de xuat level.
+4. Lane duoc chon theo vi tri click tren timeline.
+5. Doi `Lane count` de tang/giam so lane. Tool ho tro tu 1 den 12 lane.
+6. Doi `LPB` de quy dinh so line trong moi beat. Tool ho tro tu 1 den 32.
+7. Right click len note de xoa note gan nhat.
+8. Bam `Export JSON` de xuat level.
 
 ## JSON format
 
@@ -19,6 +20,7 @@ Web tool tinh gon de cham note theo MP3 cho music game.
   "version": 1,
   "song": "track.mp3",
   "bpm": 120,
+  "lpb": 4,
   "lanes": 4,
   "duration": 123.456,
   "notes": [

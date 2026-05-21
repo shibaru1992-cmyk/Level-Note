@@ -17,6 +17,7 @@ const durationTimeLabel = document.querySelector("#durationTime");
 const noteCount = document.querySelector("#noteCount");
 const notesBody = document.querySelector("#notesBody");
 const laneCountInput = document.querySelector("#laneCount");
+const lpbInput = document.querySelector("#lpbInput");
 const canvas = document.querySelector("#timeline");
 const ctx = canvas.getContext("2d");
 const minimap = document.querySelector("#minimap");
@@ -75,11 +76,15 @@ function clamp(value, min, max) {
 }
 
 function snapTime(time) {
-  const division = Number(snapInput.value);
   const bpm = Number(bpmInput.value);
-  if (!division || !bpm) return time;
-  const step = 60 / bpm / division;
+  const lpb = getLPB();
+  if (!snapInput.checked || !lpb || !bpm) return time;
+  const step = 60 / bpm / lpb;
   return Math.round(time / step) * step;
+}
+
+function getLPB() {
+  return clamp(Math.round(Number(lpbInput.value) || 4), Number(lpbInput.min), Number(lpbInput.max));
 }
 
 function getViewSpan() {
@@ -352,14 +357,19 @@ function drawBeatGrid(metrics) {
   const bpm = Number(bpmInput.value);
   if (!state.duration || !bpm) return;
   const beat = 60 / bpm;
+  const lpb = getLPB();
+  const lineStep = beat / lpb;
   ctx.strokeStyle = "#2d343c";
   ctx.fillStyle = "#7d8995";
   ctx.textAlign = "center";
-  const firstBeat = Math.floor(state.viewStart / beat) * beat;
-  for (let time = firstBeat; time <= state.viewEnd; time += beat) {
+  const firstLine = Math.floor(state.viewStart / lineStep);
+  const lastLine = Math.ceil(state.viewEnd / lineStep);
+  for (let line = firstLine; line <= lastLine; line += 1) {
+    const time = line * lineStep;
     const x = xFromTime(time, metrics);
-    const isBar = Math.round(time / beat) % 4 === 0;
-    ctx.globalAlpha = isBar ? 0.9 : 0.35;
+    const isBeat = line % lpb === 0;
+    const isBar = isBeat && Math.round(line / lpb) % 4 === 0;
+    ctx.globalAlpha = isBar ? 0.9 : isBeat ? 0.55 : 0.22;
     ctx.beginPath();
     ctx.moveTo(x, metrics.padding.top);
     ctx.lineTo(x, metrics.height - metrics.padding.bottom);
@@ -484,6 +494,7 @@ function exportLevel() {
     version: 1,
     song: state.songName || "untitled",
     bpm: Number(bpmInput.value),
+    lpb: getLPB(),
     lanes: state.laneCount,
     duration: Number((state.duration || 0).toFixed(3)),
     notes: state.notes,
@@ -510,6 +521,7 @@ function importLevel(file) {
     const importedNotes = Array.isArray(data.notes) ? data.notes.filter((note) => note.lane >= 0 && note.lane < state.laneCount) : [];
     state.notes = removeOverlappingNotes(importedNotes);
     if (data.bpm) bpmInput.value = data.bpm;
+    if (data.lpb) lpbInput.value = clamp(Math.round(Number(data.lpb)), Number(lpbInput.min), Number(lpbInput.max));
     sortNotes();
     refreshUi();
   };
@@ -713,6 +725,11 @@ levelInput.addEventListener("change", () => {
 exportButton.addEventListener("click", exportLevel);
 bpmInput.addEventListener("input", draw);
 snapInput.addEventListener("change", draw);
+lpbInput.addEventListener("input", draw);
+lpbInput.addEventListener("change", () => {
+  lpbInput.value = getLPB();
+  draw();
+});
 laneCountInput.addEventListener("change", () => setLaneCount(laneCountInput.value));
 autoFollowInput.addEventListener("change", () => {
   state.autoFollow = autoFollowInput.checked;
