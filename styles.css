@@ -156,6 +156,24 @@ h2 {
   font-size: 13px;
 }
 
+.toggle-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0f1215;
+  color: var(--muted);
+  font-size: 13px;
+  user-select: none;
+}
+
+.toggle-control input {
+  accent-color: var(--accent);
+}
+
 .numeric input,
 .numeric select,
 .note-settings input,

@@ -8,6 +8,7 @@ const clearButton = document.querySelector("#clearButton");
 const scrub = document.querySelector("#scrub");
 const bpmInput = document.querySelector("#bpmInput");
 const snapInput = document.querySelector("#snapInput");
+const autoFollowInput = document.querySelector("#autoFollowInput");
 const noteType = document.querySelector("#noteType");
 const holdLength = document.querySelector("#holdLength");
 const songMeta = document.querySelector("#songMeta");
@@ -50,6 +51,7 @@ const state = {
   notes: [],
   history: [],
   isDraggingMinimap: false,
+  autoFollow: true,
 };
 
 function getLanes() {
@@ -99,6 +101,19 @@ function setView(start, span) {
 
 function resetView() {
   setView(0, state.duration || 0);
+}
+
+function followPlayhead() {
+  if (!state.autoFollow || audio.paused || state.isDraggingMinimap || !state.duration) return;
+  const span = getViewSpan();
+  if (span >= state.duration) return;
+  const current = audio.currentTime || 0;
+  const followPosition = 0.32;
+  const minVisible = state.viewStart + span * 0.28;
+  const maxVisible = state.viewStart + span * 0.72;
+  if (current < minVisible || current > maxVisible) {
+    setView(current - span * followPosition, span);
+  }
 }
 
 function pushHistory() {
@@ -536,6 +551,7 @@ async function buildWaveform(file) {
 function animationTick() {
   currentTimeLabel.textContent = formatTime(audio.currentTime || 0);
   scrub.value = audio.currentTime || 0;
+  followPlayhead();
   draw();
   drawMinimap();
   requestAnimationFrame(animationTick);
@@ -698,6 +714,9 @@ exportButton.addEventListener("click", exportLevel);
 bpmInput.addEventListener("input", draw);
 snapInput.addEventListener("change", draw);
 laneCountInput.addEventListener("change", () => setLaneCount(laneCountInput.value));
+autoFollowInput.addEventListener("change", () => {
+  state.autoFollow = autoFollowInput.checked;
+});
 
 window.addEventListener("resize", resizeCanvas);
 window.addEventListener("keydown", (event) => {
