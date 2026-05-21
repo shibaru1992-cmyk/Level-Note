@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Level Note Editor</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Level Note Editor</h1>
+          <p id="songMeta">Chua co MP3</p>
+        </div>
+        <div class="file-actions">
+          <label class="file-button">
+            <input id="audioInput" type="file" accept="audio/mpeg,audio/mp3,audio/*" />
+            MP3
+          </label>
+          <label class="file-button secondary">
+            <input id="levelInput" type="file" accept="application/json,.json" />
+            Import JSON
+          </label>
+          <button id="exportButton" type="button">Export JSON</button>
+        </div>
+      </header>
+
+      <section class="transport">
+        <button id="playButton" class="icon-button" type="button" disabled title="Play/Pause">▶</button>
+        <button id="stopButton" class="icon-button" type="button" disabled title="Stop">■</button>
+        <div class="time-readout">
+          <span id="currentTime">00:00.000</span>
+          <span>/</span>
+          <span id="durationTime">00:00.000</span>
+        </div>
+        <input id="scrub" type="range" min="0" max="0" value="0" step="0.001" disabled />
+        <label class="numeric">
+          BPM
+          <input id="bpmInput" type="number" min="40" max="300" step="1" value="120" />
+        </label>
+        <label class="numeric">
+          Snap
+          <select id="snapInput">
+            <option value="0">Off</option>
+            <option value="1">1/1</option>
+            <option value="2">1/2</option>
+            <option value="4" selected>1/4</option>
+            <option value="8">1/8</option>
+            <option value="16">1/16</option>
+          </select>
+        </label>
+        <button id="undoButton" type="button" disabled>Undo</button>
+      </section>
+
+      <section class="editor">
+        <aside class="lane-panel" aria-label="Lane controls">
+          <h2>Setup</h2>
+          <div class="note-settings">
+            <label>
+              Lane count
+              <input id="laneCount" type="number" min="1" max="12" step="1" value="4" />
+            </label>
+            <label>
+              Type
+              <select id="noteType">
+                <option value="tap">Tap</option>
+                <option value="hold">Hold</option>
+              </select>
+            </label>
+            <label>
+              Hold length
+              <input id="holdLength" type="number" min="0.05" max="10" step="0.05" value="0.5" />
+            </label>
+          </div>
+          <div class="stats">
+            <strong id="noteCount">0</strong>
+            <span>notes</span>
+          </div>
+        </aside>
+
+        <div class="timeline-wrap">
+          <canvas id="timeline" width="1400" height="520"></canvas>
+          <canvas id="minimap" width="1400" height="64"></canvas>
+          <div class="hint-row">
+            <span>Click timeline de dat note</span>
+            <span>Right click note de xoa</span>
+            <span>Mouse wheel zoom</span>
+            <span>Drag minimap de move</span>
+            <span>Space play/pause</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="note-table">
+        <div class="section-title">
+          <h2>Notes</h2>
+          <button id="clearButton" type="button" disabled>Clear</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Lane</th>
+                <th>Type</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody id="notesBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <audio id="audio" preload="metadata"></audio>
+    <script src="app.js"></script>
+  </body>
+</html>
