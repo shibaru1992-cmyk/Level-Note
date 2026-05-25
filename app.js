@@ -29,6 +29,7 @@ const contextMenu = document.querySelector("#contextMenu");
 const copyMenuItem = document.querySelector("#copyMenuItem");
 const pasteMenuItem = document.querySelector("#pasteMenuItem");
 const deleteMenuItem = document.querySelector("#deleteMenuItem");
+const inspectorResizeHandle = document.querySelector("#inspectorResizeHandle");
 const canvas = document.querySelector("#timeline");
 const ctx = canvas.getContext("2d");
 const minimap = document.querySelector("#minimap");
@@ -67,6 +68,9 @@ const state = {
   selectionDrag: null,
   copiedNotes: [],
   contextTarget: null,
+  isResizingInspector: false,
+  activeCurveId: null,
+  curvePreviewPoint: null,
   nextNoteId: 1,
   autoFollow: true,
 };
@@ -165,6 +169,23 @@ function createNoteId() {
 
 function normalizeNote(note) {
   if (!note.id) note.id = createNoteId();
+  if (note.type === "curve") {
+    if (!Array.isArray(note.points) || !note.points.length) {
+      note.points = [
+        { time: note.time || 0, lane: note.lane || 0 },
+        { time: (note.time || 0) + (note.duration || 0), lane: note.lane || 0 },
+      ];
+    }
+    note.points = note.points
+      .filter((point) => point && Number.isFinite(Number(point.time)) && Number.isFinite(Number(point.lane)))
+      .map((point) => ({
+        time: Number(point.time),
+        lane: clamp(Math.round(Number(point.lane)), 0, state.laneCount - 1),
+      }));
+    note.time = note.points[0]?.time || 0;
+    note.lane = note.points[0]?.lane || 0;
+    delete note.duration;
+  }
   if (!Array.isArray(note.meta)) note.meta = [];
   note.meta = note.meta
     .filter((item) => item && typeof item.key === "string")
@@ -174,6 +195,11 @@ function normalizeNote(note) {
 
 function getSelectedNotes() {
   return state.notes.filter((note) => state.selectedNoteIds.has(note.id));
+}
+
+function getNoteLaneDisplay(note) {
+  if (note.type !== "curve") return String(note.lane + 1);
+  return note.points.map((point) => point.lane + 1).join(" -> ");
 }
 
 function selectNotes(ids) {
@@ -187,6 +213,7 @@ function cloneNoteForClipboard(note) {
     lane: note.lane,
     type: note.type,
     ...(note.type === "hold" ? { duration: note.duration } : {}),
+    ...(note.type === "curve" ? { points: note.points.map((point) => ({ ...point })) } : {}),
     meta: (note.meta || []).map((item) => ({ key: item.key, value: item.value })),
   };
 }
@@ -199,6 +226,7 @@ function deleteSelectedNotes() {
   if (!state.selectedNoteIds.size) return;
   pushHistory();
   state.notes = state.notes.filter((note) => !state.selectedNoteIds.has(note.id));
+  if (state.selectedNoteIds.has(state.activeCurveId)) state.activeCurveId = null;
   state.selectedNoteIds.clear();
   refreshUi();
 }
@@ -216,6 +244,14 @@ function pasteCopiedNotes(targetTime, targetLane) {
       time: Number(clamp(snapTime(targetTime + source.time - baseTime), 0, state.duration).toFixed(3)),
       lane: clamp(targetLane + source.lane - baseLane, 0, state.laneCount - 1),
     });
+    if (note.type === "curve") {
+      note.points = source.points.map((point) => ({
+        time: Number(clamp(snapTime(targetTime + point.time - baseTime), 0, state.duration).toFixed(3)),
+        lane: clamp(targetLane + point.lane - baseLane, 0, state.laneCount - 1),
+      }));
+      note.time = note.points[0].time;
+      note.lane = note.points[0].lane;
+    }
     if (![...state.notes, ...pasted].some((existing) => notesOverlap(existing, note))) {
       pasted.push(note);
     }
@@ -248,6 +284,13 @@ function showContextMenu(clientX, clientY, targetTime, targetLane) {
 }
 
 function getNoteRange(note) {
+  if (note.type === "curve") {
+    const times = note.points.map((point) => point.time);
+    return {
+      start: Math.min(...times),
+      end: Math.max(...times),
+    };
+  }
   if (note.type === "hold") {
     return {
       start: note.time,
@@ -261,6 +304,7 @@ function getNoteRange(note) {
 }
 
 function notesOverlap(a, b) {
+  if (a.type === "curve" || b.type === "curve") return false;
   if (a.lane !== b.lane) return false;
   const rangeA = getNoteRange(a);
   const rangeB = getNoteRange(b);
@@ -332,6 +376,15 @@ function laneFromY(y, metrics) {
   if (y < metrics.padding.top || y > metrics.padding.top + metrics.lanePlotHeight) return null;
   const raw = Math.floor((y - metrics.padding.top) / metrics.laneHeight);
   return clamp(raw, 0, state.laneCount - 1);
+}
+
+function isInTimePlot(x, y, metrics) {
+  return (
+    x >= metrics.padding.left &&
+    x <= metrics.width - metrics.padding.right &&
+    y >= metrics.padding.top &&
+    y <= metrics.padding.top + metrics.lanePlotHeight
+  );
 }
 
 function draw() {
@@ -493,25 +546,99 @@ function drawBeatGrid(metrics) {
 function drawNotes(metrics) {
   const lanes = getLanes();
   const noteSize = getNoteSize();
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(metrics.padding.left, metrics.padding.top, metrics.plotWidth, metrics.lanePlotHeight);
+  ctx.clip();
   state.notes.forEach((note) => {
     const lane = lanes[note.lane];
     if (!lane) return;
-    const noteEnd = note.time + (note.duration || 0);
-    if (noteEnd < state.viewStart || note.time > state.viewEnd) return;
+    const range = getNoteRange(note);
+    const noteEnd = range.end;
+    const noteStart = range.start;
+    if (noteEnd < state.viewStart || noteStart > state.viewEnd) return;
     const x = xFromTime(note.time, metrics);
     const y = metrics.padding.top + note.lane * metrics.laneHeight + metrics.laneHeight / 2;
     const isSelected = state.selectedNoteIds.has(note.id);
     ctx.fillStyle = lane.color;
     ctx.strokeStyle = isSelected ? "#ffffff" : "#0b0d0f";
+    if (note.type === "curve") {
+      ctx.lineWidth = Math.max(3, noteSize * 0.45);
+      ctx.strokeStyle = lane.color;
+      ctx.beginPath();
+      note.points.forEach((point, index) => {
+        const pointX = xFromTime(point.time, metrics);
+        const pointY = metrics.padding.top + point.lane * metrics.laneHeight + metrics.laneHeight / 2;
+        if (index === 0) ctx.moveTo(pointX, pointY);
+        else ctx.lineTo(pointX, pointY);
+      });
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      note.points.forEach((point) => {
+        const pointLane = lanes[point.lane];
+        if (!pointLane) return;
+        ctx.fillStyle = pointLane.color;
+        ctx.strokeStyle = isSelected || note.id === state.activeCurveId ? "#ffffff" : "#0b0d0f";
+        ctx.beginPath();
+        ctx.arc(
+          xFromTime(point.time, metrics),
+          metrics.padding.top + point.lane * metrics.laneHeight + metrics.laneHeight / 2,
+          isSelected || note.id === state.activeCurveId ? noteSize + 2 : noteSize,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+        ctx.lineWidth = isSelected || note.id === state.activeCurveId ? 3 : 1;
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      });
+      if (note.id === state.activeCurveId && state.curvePreviewPoint && note.points.length) {
+        const lastPoint = note.points[note.points.length - 1];
+        const lastLane = lanes[lastPoint.lane];
+        const previewLane = lanes[state.curvePreviewPoint.lane];
+        if (lastLane && previewLane) {
+          ctx.save();
+          ctx.setLineDash([8, 6]);
+          ctx.lineWidth = Math.max(2, noteSize * 0.32);
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.82)";
+          ctx.beginPath();
+          ctx.moveTo(
+            xFromTime(lastPoint.time, metrics),
+            metrics.padding.top + lastPoint.lane * metrics.laneHeight + metrics.laneHeight / 2,
+          );
+          ctx.lineTo(
+            xFromTime(state.curvePreviewPoint.time, metrics),
+            metrics.padding.top + state.curvePreviewPoint.lane * metrics.laneHeight + metrics.laneHeight / 2,
+          );
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = previewLane.color;
+          ctx.strokeStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.arc(
+            xFromTime(state.curvePreviewPoint.time, metrics),
+            metrics.padding.top + state.curvePreviewPoint.lane * metrics.laneHeight + metrics.laneHeight / 2,
+            noteSize,
+            0,
+            Math.PI * 2,
+          );
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+      return;
+    }
     if (note.type === "hold") {
       const endX = xFromTime(note.time + note.duration, metrics);
-      ctx.lineWidth = Math.max(4, noteSize * 0.85);
+      ctx.lineWidth = Math.max(3, noteSize * 0.45);
       ctx.beginPath();
       ctx.moveTo(x, y);
       ctx.lineTo(endX, y);
       ctx.strokeStyle = lane.color;
       ctx.stroke();
       ctx.lineWidth = 1;
+      ctx.strokeStyle = isSelected ? "#ffffff" : "#0b0d0f";
     }
     ctx.beginPath();
     ctx.arc(x, y, isSelected ? noteSize + 2 : noteSize, 0, Math.PI * 2);
@@ -532,6 +659,7 @@ function drawNotes(metrics) {
     ctx.fillRect(left, top, width, height);
     ctx.strokeRect(left, top, width, height);
   }
+  ctx.restore();
 }
 
 function drawPlayhead(metrics) {
@@ -566,7 +694,7 @@ function renderInspector() {
     selectionInfo.textContent = "Click note de select, drag de select nhieu note";
   } else if (selectedNotes.length === 1) {
     const note = selectedNotes[0];
-    selectionInfo.textContent = `${formatTime(note.time)} | Lane ${note.lane + 1} | ${note.type}`;
+    selectionInfo.textContent = `${formatTime(note.time)} | Lane ${getNoteLaneDisplay(note)} | ${note.type}`;
   } else {
     selectionInfo.textContent = `${selectedNotes.length} notes dang duoc select`;
   }
@@ -576,7 +704,7 @@ function renderInspector() {
     .map(
       (note) => `<tr>
         <td>${formatTime(note.time)}</td>
-        <td>${note.lane + 1}</td>
+        <td>${getNoteLaneDisplay(note)}</td>
         <td>${note.type}</td>
         <td>${note.meta.map((item) => `${item.key}: ${item.value}`).join(", ") || "-"}</td>
       </tr>`,
@@ -594,6 +722,10 @@ function setAudioEnabled(enabled) {
 function addNote(time, lane) {
   if (!state.duration) return;
   const type = noteType.value;
+  if (type === "curve") {
+    addCurvePoint(time, lane);
+    return;
+  }
   const note = {
     id: createNoteId(),
     time: Number(snapTime(time).toFixed(3)),
@@ -612,6 +744,53 @@ function addNote(time, lane) {
   refreshUi();
 }
 
+function addCurvePoint(time, lane) {
+  const point = {
+    time: Number(snapTime(time).toFixed(3)),
+    lane,
+  };
+  let curve = state.notes.find((note) => note.id === state.activeCurveId && note.type === "curve");
+
+  if (!curve) {
+    curve = normalizeNote({
+      id: createNoteId(),
+      time: point.time,
+      lane: point.lane,
+      type: "curve",
+      points: [point],
+      meta: [],
+    });
+    pushHistory();
+    state.notes.push(curve);
+    state.activeCurveId = curve.id;
+    state.selectedNoteIds = new Set([curve.id]);
+  } else {
+    pushHistory();
+    curve.points.push(point);
+    curve.time = curve.points[0].time;
+    curve.lane = curve.points[0].lane;
+    state.selectedNoteIds = new Set([curve.id]);
+  }
+
+  sortNotes();
+  state.curvePreviewPoint = null;
+  refreshUi();
+}
+
+function finishActiveCurve() {
+  if (!state.activeCurveId) return false;
+  const curve = state.notes.find((note) => note.id === state.activeCurveId);
+  if (curve && curve.points.length < 2) {
+    pushHistory();
+    state.notes = state.notes.filter((note) => note.id !== curve.id);
+    state.selectedNoteIds.delete(curve.id);
+  }
+  state.activeCurveId = null;
+  state.curvePreviewPoint = null;
+  refreshUi();
+  return true;
+}
+
 function exportLevel() {
   const payload = {
     version: 1,
@@ -626,6 +805,7 @@ function exportLevel() {
       lane: note.lane,
       type: note.type,
       ...(note.type === "hold" ? { duration: note.duration } : {}),
+      ...(note.type === "curve" ? { points: note.points.map((point) => ({ ...point })) } : {}),
       meta: note.meta || [],
     })),
   };
@@ -711,7 +891,17 @@ function setLaneCount(count, keepHistory = true) {
   if (keepHistory) pushHistory();
   state.laneCount = nextCount;
   state.selectedLane = clamp(state.selectedLane, 0, state.laneCount - 1);
-  state.notes = state.notes.filter((note) => note.lane < state.laneCount);
+  state.notes = state.notes
+    .map((note) => {
+      if (note.type === "curve") {
+        note.points = note.points.filter((point) => point.lane < state.laneCount);
+        note.time = note.points[0]?.time || note.time;
+        note.lane = note.points[0]?.lane || note.lane;
+      }
+      return note;
+    })
+    .filter((note) => (note.type === "curve" ? note.points.length >= 2 : note.lane < state.laneCount));
+  if (!state.notes.some((note) => note.id === state.activeCurveId)) state.activeCurveId = null;
   state.selectedNoteIds = new Set([...state.selectedNoteIds].filter((id) => state.notes.some((note) => note.id === id)));
   refreshUi();
 }
@@ -771,9 +961,10 @@ canvas.addEventListener("pointerdown", (event) => {
   const metrics = getCanvasMetrics();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
+  if (!isInTimePlot(x, y, metrics)) return;
   const lane = laneFromY(y, metrics);
   if (lane === null) return;
-  const note = findNoteAt(x, y, metrics);
+  const note = noteType.value === "curve" ? null : findNoteAt(x, y, metrics);
   state.selectionDrag = {
     startX: x,
     startY: y,
@@ -787,10 +978,25 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 
 canvas.addEventListener("pointermove", (event) => {
-  if (!state.selectionDrag) return;
   const rect = canvas.getBoundingClientRect();
+  const metrics = getCanvasMetrics();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
+
+  if (state.activeCurveId && !state.selectionDrag) {
+    if (isInTimePlot(x, y, metrics)) {
+      state.curvePreviewPoint = {
+        time: Number(snapTime(timeFromX(x, metrics)).toFixed(3)),
+        lane: laneFromY(y, metrics),
+      };
+    } else {
+      state.curvePreviewPoint = null;
+    }
+    draw();
+    return;
+  }
+
+  if (!state.selectionDrag) return;
   state.selectionDrag.currentX = x;
   state.selectionDrag.currentY = y;
   state.selectionDrag.moved = Math.abs(x - state.selectionDrag.startX) > 4 || Math.abs(y - state.selectionDrag.startY) > 4;
@@ -817,19 +1023,27 @@ canvas.addEventListener("pointerup", (event) => {
 
 canvas.addEventListener("pointercancel", () => {
   state.selectionDrag = null;
+  state.curvePreviewPoint = null;
   draw();
 });
 
 canvas.addEventListener("contextmenu", (event) => {
   event.preventDefault();
+  if (finishActiveCurve()) return;
   const rect = canvas.getBoundingClientRect();
   const metrics = getCanvasMetrics();
-  const lane = laneFromY(event.clientY - rect.top, metrics);
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  if (!isInTimePlot(x, y, metrics)) {
+    hideContextMenu();
+    return;
+  }
+  const lane = laneFromY(y, metrics);
   if (lane === null) {
     hideContextMenu();
     return;
   }
-  showContextMenu(event.clientX, event.clientY, timeFromX(event.clientX - rect.left, metrics), lane);
+  showContextMenu(event.clientX, event.clientY, timeFromX(x, metrics), lane);
 });
 
 canvas.addEventListener(
@@ -867,6 +1081,15 @@ function findNoteAt(x, y, metrics) {
   for (let i = state.notes.length - 1; i >= 0; i -= 1) {
     const note = state.notes[i];
     if (note.lane >= state.laneCount) continue;
+    if (note.type === "curve") {
+      const hitCurvePoint = note.points.some((point) => {
+        const pointX = xFromTime(point.time, metrics);
+        const pointY = metrics.padding.top + point.lane * metrics.laneHeight + metrics.laneHeight / 2;
+        return Math.abs(x - pointX) <= noteSize + hitPadding && Math.abs(y - pointY) <= noteSize + hitPadding;
+      });
+      if (hitCurvePoint) return note;
+      continue;
+    }
     const noteX = xFromTime(note.time, metrics);
     const noteY = metrics.padding.top + note.lane * metrics.laneHeight + metrics.laneHeight / 2;
     const noteEndX = note.type === "hold" ? xFromTime(note.time + note.duration, metrics) : noteX;
@@ -884,6 +1107,13 @@ function findNotesInRect(rect, metrics) {
   const bottom = Math.max(rect.startY, rect.currentY);
   return state.notes
     .filter((note) => {
+      if (note.type === "curve") {
+        return note.points.some((point) => {
+          const x = xFromTime(point.time, metrics);
+          const y = metrics.padding.top + point.lane * metrics.laneHeight + metrics.laneHeight / 2;
+          return x >= left && x <= right && y >= top && y <= bottom;
+        });
+      }
       const x = xFromTime(note.time, metrics);
       const y = metrics.padding.top + note.lane * metrics.laneHeight + metrics.laneHeight / 2;
       return x >= left && x <= right && y >= top && y <= bottom;
@@ -998,6 +1228,29 @@ document.addEventListener("pointerdown", (event) => {
   }
 });
 
+inspectorResizeHandle.addEventListener("pointerdown", (event) => {
+  state.isResizingInspector = true;
+  inspectorResizeHandle.setPointerCapture(event.pointerId);
+});
+
+inspectorResizeHandle.addEventListener("pointermove", (event) => {
+  if (!state.isResizingInspector) return;
+  const shellPadding = window.innerWidth <= 820 ? 10 : 16;
+  const maxHeight = Math.min(window.innerHeight * 0.55, 520);
+  const height = clamp(window.innerHeight - event.clientY - shellPadding, 150, maxHeight);
+  document.querySelector(".app-shell").style.setProperty("--inspector-height", `${height}px`);
+  resizeCanvas();
+});
+
+inspectorResizeHandle.addEventListener("pointerup", (event) => {
+  state.isResizingInspector = false;
+  inspectorResizeHandle.releasePointerCapture(event.pointerId);
+});
+
+inspectorResizeHandle.addEventListener("pointercancel", () => {
+  state.isResizingInspector = false;
+});
+
 levelInput.addEventListener("change", () => {
   const file = levelInput.files[0];
   if (file) importLevel(file);
@@ -1012,6 +1265,9 @@ lpbInput.addEventListener("change", () => {
   draw();
 });
 noteSizeInput.addEventListener("input", draw);
+noteType.addEventListener("change", () => {
+  if (noteType.value !== "curve") finishActiveCurve();
+});
 laneCountInput.addEventListener("change", () => setLaneCount(laneCountInput.value));
 autoFollowInput.addEventListener("change", () => {
   state.autoFollow = autoFollowInput.checked;
