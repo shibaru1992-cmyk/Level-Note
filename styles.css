@@ -56,6 +56,40 @@ button:hover:not(:disabled),
   border-color: var(--accent);
 }
 
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  display: grid;
+  min-width: 138px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #11161a;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.38);
+}
+
+.context-menu[hidden] {
+  display: none;
+}
+
+.context-menu button {
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  min-height: 34px;
+  text-align: left;
+}
+
+.context-menu button:hover:not(:disabled) {
+  background: var(--panel-2);
+  border-color: transparent;
+}
+
+.context-menu .danger-item {
+  color: var(--danger);
+}
+
 .app-shell {
   display: grid;
   gap: 14px;
@@ -67,7 +101,8 @@ button:hover:not(:disabled),
 .topbar,
 .transport,
 .editor,
-.note-table {
+.note-table,
+.note-inspector {
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 8px;
@@ -216,6 +251,14 @@ h2 {
   font-size: 13px;
 }
 
+#noteSizeInput {
+  width: 100%;
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .stats {
   margin-top: auto;
   display: flex;
@@ -266,7 +309,7 @@ h2 {
   font-size: 12px;
 }
 
-.note-table {
+.note-inspector {
   min-height: 0;
   overflow: hidden;
 }
@@ -279,8 +322,44 @@ h2 {
   border-bottom: 1px solid var(--line);
 }
 
-.table-scroll {
+.inspector-body {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 10px;
   height: calc(100% - 56px);
+  padding: 10px 14px 14px;
+}
+
+.selection-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.selection-summary strong {
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.meta-editor {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(160px, 1.4fr) auto auto;
+  gap: 8px;
+}
+
+.meta-editor input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0f1215;
+  color: var(--text);
+  min-height: 34px;
+  padding: 0 9px;
+}
+
+.table-scroll {
+  min-height: 0;
   overflow: auto;
 }
 
@@ -327,6 +406,10 @@ th {
   }
 
   .editor {
+    grid-template-columns: 1fr;
+  }
+
+  .meta-editor {
     grid-template-columns: 1fr;
   }
 

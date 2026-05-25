@@ -73,6 +73,10 @@
               Hold length
               <input id="holdLength" type="number" min="0.05" max="10" step="0.05" value="0.5" />
             </label>
+            <label>
+              Note size
+              <input id="noteSizeInput" type="range" min="5" max="20" step="1" value="9" />
+            </label>
           </div>
           <div class="stats">
             <strong id="noteCount">0</strong>
@@ -93,26 +97,44 @@
         </div>
       </section>
 
-      <section class="note-table">
+      <section class="note-inspector">
         <div class="section-title">
-          <h2>Notes</h2>
+          <h2>Inspector</h2>
           <button id="clearButton" type="button" disabled>Clear</button>
         </div>
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Lane</th>
-                <th>Type</th>
-                <th>Duration</th>
-              </tr>
-            </thead>
-            <tbody id="notesBody"></tbody>
-          </table>
+        <div class="inspector-body">
+          <div class="selection-summary">
+            <strong id="selectionCount">0 selected</strong>
+            <span id="selectionInfo">Click note de select, drag de select nhieu note</span>
+          </div>
+          <div class="meta-editor">
+            <input id="metaKeyInput" type="text" placeholder="meta key" />
+            <input id="metaValueInput" type="text" placeholder="meta value" />
+            <button id="addMetaButton" type="button" disabled>Add meta</button>
+            <button id="removeMetaButton" type="button" disabled>Remove key</button>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Lane</th>
+                  <th>Type</th>
+                  <th>Meta</th>
+                </tr>
+              </thead>
+              <tbody id="selectedNotesBody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
     </main>
+
+    <div id="contextMenu" class="context-menu" hidden>
+      <button id="copyMenuItem" type="button">Copy</button>
+      <button id="pasteMenuItem" type="button">Paste</button>
+      <button id="deleteMenuItem" class="danger-item" type="button">Delete</button>
+    </div>
 
     <audio id="audio" preload="metadata"></audio>
     <script src="app.js"></script>

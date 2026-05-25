@@ -10,8 +10,10 @@ Web tool tinh gon de cham note theo MP3 cho music game.
 4. Lane duoc chon theo vi tri click tren timeline.
 5. Doi `Lane count` de tang/giam so lane. Tool ho tro tu 1 den 12 lane.
 6. Doi `LPB` de quy dinh so line trong moi beat. Tool ho tro tu 1 den 32.
-7. Right click len note de xoa note gan nhat.
-8. Bam `Export JSON` de xuat level.
+7. Click len note de select, hoac drag tren timeline de select nhieu note.
+8. Them/xoa meta trong Inspector; meta duoc gan vao tat ca note dang select.
+9. Right click timeline de mo menu Copy/Paste/Delete. Copy va Delete can note dang select; Paste can copy truoc do.
+10. Bam `Export JSON` de xuat level.
 
 ## JSON format
 
@@ -24,8 +26,8 @@ Web tool tinh gon de cham note theo MP3 cho music game.
   "lanes": 4,
   "duration": 123.456,
   "notes": [
-    { "time": 1.25, "lane": 0, "type": "tap" },
-    { "time": 2.5, "lane": 2, "type": "hold", "duration": 0.75 }
+    { "time": 1.25, "lane": 0, "type": "tap", "meta": [{ "key": "spawn", "value": "left" }] },
+    { "time": 2.5, "lane": 2, "type": "hold", "duration": 0.75, "meta": [] }
   ]
 }
 ```

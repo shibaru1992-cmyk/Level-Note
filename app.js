@@ -11,13 +11,24 @@ const snapInput = document.querySelector("#snapInput");
 const autoFollowInput = document.querySelector("#autoFollowInput");
 const noteType = document.querySelector("#noteType");
 const holdLength = document.querySelector("#holdLength");
+const noteSizeInput = document.querySelector("#noteSizeInput");
 const songMeta = document.querySelector("#songMeta");
 const currentTimeLabel = document.querySelector("#currentTime");
 const durationTimeLabel = document.querySelector("#durationTime");
 const noteCount = document.querySelector("#noteCount");
-const notesBody = document.querySelector("#notesBody");
+const selectionCount = document.querySelector("#selectionCount");
+const selectionInfo = document.querySelector("#selectionInfo");
+const selectedNotesBody = document.querySelector("#selectedNotesBody");
+const metaKeyInput = document.querySelector("#metaKeyInput");
+const metaValueInput = document.querySelector("#metaValueInput");
+const addMetaButton = document.querySelector("#addMetaButton");
+const removeMetaButton = document.querySelector("#removeMetaButton");
 const laneCountInput = document.querySelector("#laneCount");
 const lpbInput = document.querySelector("#lpbInput");
+const contextMenu = document.querySelector("#contextMenu");
+const copyMenuItem = document.querySelector("#copyMenuItem");
+const pasteMenuItem = document.querySelector("#pasteMenuItem");
+const deleteMenuItem = document.querySelector("#deleteMenuItem");
 const canvas = document.querySelector("#timeline");
 const ctx = canvas.getContext("2d");
 const minimap = document.querySelector("#minimap");
@@ -52,6 +63,11 @@ const state = {
   notes: [],
   history: [],
   isDraggingMinimap: false,
+  selectedNoteIds: new Set(),
+  selectionDrag: null,
+  copiedNotes: [],
+  contextTarget: null,
+  nextNoteId: 1,
   autoFollow: true,
 };
 
@@ -85,6 +101,10 @@ function snapTime(time) {
 
 function getLPB() {
   return clamp(Math.round(Number(lpbInput.value) || 4), Number(lpbInput.min), Number(lpbInput.max));
+}
+
+function getNoteSize() {
+  return clamp(Number(noteSizeInput.value) || 9, Number(noteSizeInput.min), Number(noteSizeInput.max));
 }
 
 function getViewSpan() {
@@ -135,6 +155,96 @@ function pushHistory() {
 
 function sortNotes() {
   state.notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
+}
+
+function createNoteId() {
+  const id = `note_${state.nextNoteId}`;
+  state.nextNoteId += 1;
+  return id;
+}
+
+function normalizeNote(note) {
+  if (!note.id) note.id = createNoteId();
+  if (!Array.isArray(note.meta)) note.meta = [];
+  note.meta = note.meta
+    .filter((item) => item && typeof item.key === "string")
+    .map((item) => ({ key: item.key, value: item.value ?? "" }));
+  return note;
+}
+
+function getSelectedNotes() {
+  return state.notes.filter((note) => state.selectedNoteIds.has(note.id));
+}
+
+function selectNotes(ids) {
+  state.selectedNoteIds = new Set(ids);
+  refreshUi();
+}
+
+function cloneNoteForClipboard(note) {
+  return {
+    time: note.time,
+    lane: note.lane,
+    type: note.type,
+    ...(note.type === "hold" ? { duration: note.duration } : {}),
+    meta: (note.meta || []).map((item) => ({ key: item.key, value: item.value })),
+  };
+}
+
+function copySelectedNotes() {
+  state.copiedNotes = getSelectedNotes().map(cloneNoteForClipboard);
+}
+
+function deleteSelectedNotes() {
+  if (!state.selectedNoteIds.size) return;
+  pushHistory();
+  state.notes = state.notes.filter((note) => !state.selectedNoteIds.has(note.id));
+  state.selectedNoteIds.clear();
+  refreshUi();
+}
+
+function pasteCopiedNotes(targetTime, targetLane) {
+  if (!state.copiedNotes.length || !state.duration) return;
+  const baseTime = Math.min(...state.copiedNotes.map((note) => note.time));
+  const baseLane = Math.min(...state.copiedNotes.map((note) => note.lane));
+  const pasted = [];
+
+  state.copiedNotes.forEach((source) => {
+    const note = normalizeNote({
+      ...cloneNoteForClipboard(source),
+      id: createNoteId(),
+      time: Number(clamp(snapTime(targetTime + source.time - baseTime), 0, state.duration).toFixed(3)),
+      lane: clamp(targetLane + source.lane - baseLane, 0, state.laneCount - 1),
+    });
+    if (![...state.notes, ...pasted].some((existing) => notesOverlap(existing, note))) {
+      pasted.push(note);
+    }
+  });
+
+  if (!pasted.length) return;
+  pushHistory();
+  state.notes.push(...pasted);
+  state.selectedNoteIds = new Set(pasted.map((note) => note.id));
+  sortNotes();
+  refreshUi();
+}
+
+function hideContextMenu() {
+  contextMenu.hidden = true;
+}
+
+function showContextMenu(clientX, clientY, targetTime, targetLane) {
+  state.contextTarget = { time: targetTime, lane: targetLane };
+  copyMenuItem.disabled = state.selectedNoteIds.size === 0;
+  deleteMenuItem.disabled = state.selectedNoteIds.size === 0;
+  pasteMenuItem.disabled = state.copiedNotes.length === 0;
+  contextMenu.hidden = false;
+
+  const rect = contextMenu.getBoundingClientRect();
+  const x = Math.min(clientX, window.innerWidth - rect.width - 8);
+  const y = Math.min(clientY, window.innerHeight - rect.height - 8);
+  contextMenu.style.left = `${Math.max(8, x)}px`;
+  contextMenu.style.top = `${Math.max(8, y)}px`;
 }
 
 function getNoteRange(note) {
@@ -382,6 +492,7 @@ function drawBeatGrid(metrics) {
 
 function drawNotes(metrics) {
   const lanes = getLanes();
+  const noteSize = getNoteSize();
   state.notes.forEach((note) => {
     const lane = lanes[note.lane];
     if (!lane) return;
@@ -389,11 +500,12 @@ function drawNotes(metrics) {
     if (noteEnd < state.viewStart || note.time > state.viewEnd) return;
     const x = xFromTime(note.time, metrics);
     const y = metrics.padding.top + note.lane * metrics.laneHeight + metrics.laneHeight / 2;
+    const isSelected = state.selectedNoteIds.has(note.id);
     ctx.fillStyle = lane.color;
-    ctx.strokeStyle = "#0b0d0f";
+    ctx.strokeStyle = isSelected ? "#ffffff" : "#0b0d0f";
     if (note.type === "hold") {
       const endX = xFromTime(note.time + note.duration, metrics);
-      ctx.lineWidth = 8;
+      ctx.lineWidth = Math.max(4, noteSize * 0.85);
       ctx.beginPath();
       ctx.moveTo(x, y);
       ctx.lineTo(endX, y);
@@ -402,10 +514,24 @@ function drawNotes(metrics) {
       ctx.lineWidth = 1;
     }
     ctx.beginPath();
-    ctx.arc(x, y, 9, 0, Math.PI * 2);
+    ctx.arc(x, y, isSelected ? noteSize + 2 : noteSize, 0, Math.PI * 2);
     ctx.fill();
+    ctx.lineWidth = isSelected ? 3 : 1;
     ctx.stroke();
+    ctx.lineWidth = 1;
   });
+
+  if (state.selectionDrag) {
+    const { startX, startY, currentX, currentY } = state.selectionDrag;
+    const left = Math.min(startX, currentX);
+    const top = Math.min(startY, currentY);
+    const width = Math.abs(currentX - startX);
+    const height = Math.abs(currentY - startY);
+    ctx.fillStyle = "rgba(98, 168, 255, 0.16)";
+    ctx.strokeStyle = "#62a8ff";
+    ctx.fillRect(left, top, width, height);
+    ctx.strokeRect(left, top, width, height);
+  }
 }
 
 function drawPlayhead(metrics) {
@@ -429,19 +555,30 @@ function refreshUi() {
   clearButton.disabled = state.notes.length === 0;
   undoButton.disabled = state.history.length === 0;
   laneCountInput.value = state.laneCount;
-  renderTable();
+  renderInspector();
   draw();
 }
 
-function renderTable() {
-  const visibleNotes = state.notes.slice(0, 400);
-  notesBody.innerHTML = visibleNotes
+function renderInspector() {
+  const selectedNotes = getSelectedNotes();
+  selectionCount.textContent = `${selectedNotes.length} selected`;
+  if (!selectedNotes.length) {
+    selectionInfo.textContent = "Click note de select, drag de select nhieu note";
+  } else if (selectedNotes.length === 1) {
+    const note = selectedNotes[0];
+    selectionInfo.textContent = `${formatTime(note.time)} | Lane ${note.lane + 1} | ${note.type}`;
+  } else {
+    selectionInfo.textContent = `${selectedNotes.length} notes dang duoc select`;
+  }
+  addMetaButton.disabled = selectedNotes.length === 0;
+  removeMetaButton.disabled = selectedNotes.length === 0;
+  selectedNotesBody.innerHTML = selectedNotes
     .map(
       (note) => `<tr>
         <td>${formatTime(note.time)}</td>
         <td>${note.lane + 1}</td>
         <td>${note.type}</td>
-        <td>${note.type === "hold" ? note.duration.toFixed(3) : "-"}</td>
+        <td>${note.meta.map((item) => `${item.key}: ${item.value}`).join(", ") || "-"}</td>
       </tr>`,
     )
     .join("");
@@ -458,9 +595,11 @@ function addNote(time, lane) {
   if (!state.duration) return;
   const type = noteType.value;
   const note = {
+    id: createNoteId(),
     time: Number(snapTime(time).toFixed(3)),
     lane,
     type,
+    meta: [],
   };
   if (type === "hold") {
     note.duration = Number(clamp(Number(holdLength.value), 0.05, 10).toFixed(3));
@@ -468,24 +607,8 @@ function addNote(time, lane) {
   if (hasOverlappingNote(note)) return;
   pushHistory();
   state.notes.push(note);
+  state.selectedNoteIds = new Set([note.id]);
   sortNotes();
-  refreshUi();
-}
-
-function removeNearestNote(time, lane) {
-  const threshold = Math.max(0.08, state.duration * 0.006);
-  let targetIndex = -1;
-  let targetDistance = Infinity;
-  state.notes.forEach((note, index) => {
-    const distance = Math.abs(note.time - time);
-    if (note.lane === lane && distance < threshold && distance < targetDistance) {
-      targetIndex = index;
-      targetDistance = distance;
-    }
-  });
-  if (targetIndex === -1) return;
-  pushHistory();
-  state.notes.splice(targetIndex, 1);
   refreshUi();
 }
 
@@ -497,7 +620,14 @@ function exportLevel() {
     lpb: getLPB(),
     lanes: state.laneCount,
     duration: Number((state.duration || 0).toFixed(3)),
-    notes: state.notes,
+    notes: state.notes.map((note) => ({
+      id: note.id,
+      time: note.time,
+      lane: note.lane,
+      type: note.type,
+      ...(note.type === "hold" ? { duration: note.duration } : {}),
+      meta: note.meta || [],
+    })),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -518,8 +648,11 @@ function importLevel(file) {
       state.laneCount = clamp(importedLaneCount, Number(laneCountInput.min), Number(laneCountInput.max));
     }
     state.selectedLane = clamp(state.selectedLane, 0, state.laneCount - 1);
-    const importedNotes = Array.isArray(data.notes) ? data.notes.filter((note) => note.lane >= 0 && note.lane < state.laneCount) : [];
+    const importedNotes = Array.isArray(data.notes)
+      ? data.notes.map(normalizeNote).filter((note) => note.lane >= 0 && note.lane < state.laneCount)
+      : [];
     state.notes = removeOverlappingNotes(importedNotes);
+    state.selectedNoteIds.clear();
     if (data.bpm) bpmInput.value = data.bpm;
     if (data.lpb) lpbInput.value = clamp(Math.round(Number(data.lpb)), Number(lpbInput.min), Number(lpbInput.max));
     sortNotes();
@@ -579,6 +712,7 @@ function setLaneCount(count, keepHistory = true) {
   state.laneCount = nextCount;
   state.selectedLane = clamp(state.selectedLane, 0, state.laneCount - 1);
   state.notes = state.notes.filter((note) => note.lane < state.laneCount);
+  state.selectedNoteIds = new Set([...state.selectedNoteIds].filter((id) => state.notes.some((note) => note.id === id)));
   refreshUi();
 }
 
@@ -627,15 +761,63 @@ scrub.addEventListener("input", () => {
   refreshUi();
 });
 
-canvas.addEventListener("click", (event) => {
+canvas.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  if (!contextMenu.hidden) {
+    hideContextMenu();
+    return;
+  }
   const rect = canvas.getBoundingClientRect();
   const metrics = getCanvasMetrics();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
   const lane = laneFromY(y, metrics);
   if (lane === null) return;
-  state.selectedLane = lane;
-  addNote(timeFromX(x, metrics), lane);
+  const note = findNoteAt(x, y, metrics);
+  state.selectionDrag = {
+    startX: x,
+    startY: y,
+    currentX: x,
+    currentY: y,
+    lane,
+    noteId: note?.id || null,
+    moved: false,
+  };
+  canvas.setPointerCapture(event.pointerId);
+});
+
+canvas.addEventListener("pointermove", (event) => {
+  if (!state.selectionDrag) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  state.selectionDrag.currentX = x;
+  state.selectionDrag.currentY = y;
+  state.selectionDrag.moved = Math.abs(x - state.selectionDrag.startX) > 4 || Math.abs(y - state.selectionDrag.startY) > 4;
+  draw();
+});
+
+canvas.addEventListener("pointerup", (event) => {
+  if (!state.selectionDrag) return;
+  const metrics = getCanvasMetrics();
+  const drag = state.selectionDrag;
+  state.selectionDrag = null;
+  canvas.releasePointerCapture(event.pointerId);
+  if (drag.moved) {
+    selectNotes(findNotesInRect(drag, metrics));
+    return;
+  }
+  if (drag.noteId) {
+    selectNotes([drag.noteId]);
+    return;
+  }
+  state.selectedLane = drag.lane;
+  addNote(timeFromX(drag.startX, metrics), drag.lane);
+});
+
+canvas.addEventListener("pointercancel", () => {
+  state.selectionDrag = null;
+  draw();
 });
 
 canvas.addEventListener("contextmenu", (event) => {
@@ -643,8 +825,11 @@ canvas.addEventListener("contextmenu", (event) => {
   const rect = canvas.getBoundingClientRect();
   const metrics = getCanvasMetrics();
   const lane = laneFromY(event.clientY - rect.top, metrics);
-  if (lane === null) return;
-  removeNearestNote(timeFromX(event.clientX - rect.left, metrics), lane);
+  if (lane === null) {
+    hideContextMenu();
+    return;
+  }
+  showContextMenu(event.clientX, event.clientY, timeFromX(event.clientX - rect.left, metrics), lane);
 });
 
 canvas.addEventListener(
@@ -676,6 +861,36 @@ function moveViewFromMinimap(clientX) {
   draw();
 }
 
+function findNoteAt(x, y, metrics) {
+  const noteSize = getNoteSize();
+  const hitPadding = Math.max(6, noteSize * 0.6);
+  for (let i = state.notes.length - 1; i >= 0; i -= 1) {
+    const note = state.notes[i];
+    if (note.lane >= state.laneCount) continue;
+    const noteX = xFromTime(note.time, metrics);
+    const noteY = metrics.padding.top + note.lane * metrics.laneHeight + metrics.laneHeight / 2;
+    const noteEndX = note.type === "hold" ? xFromTime(note.time + note.duration, metrics) : noteX;
+    const left = Math.min(noteX, noteEndX) - noteSize - hitPadding;
+    const right = Math.max(noteX, noteEndX) + noteSize + hitPadding;
+    if (x >= left && x <= right && Math.abs(y - noteY) <= noteSize + hitPadding) return note;
+  }
+  return null;
+}
+
+function findNotesInRect(rect, metrics) {
+  const left = Math.min(rect.startX, rect.currentX);
+  const right = Math.max(rect.startX, rect.currentX);
+  const top = Math.min(rect.startY, rect.currentY);
+  const bottom = Math.max(rect.startY, rect.currentY);
+  return state.notes
+    .filter((note) => {
+      const x = xFromTime(note.time, metrics);
+      const y = metrics.padding.top + note.lane * metrics.laneHeight + metrics.laneHeight / 2;
+      return x >= left && x <= right && y >= top && y <= bottom;
+    })
+    .map((note) => note.id);
+}
+
 minimap.addEventListener("pointerdown", (event) => {
   state.isDraggingMinimap = true;
   minimap.setPointerCapture(event.pointerId);
@@ -701,12 +916,13 @@ undoButton.addEventListener("click", () => {
   if (!previous) return;
   const previousState = JSON.parse(previous);
   if (Array.isArray(previousState)) {
-    state.notes = previousState;
+    state.notes = previousState.map(normalizeNote);
   } else {
     state.laneCount = previousState.laneCount || state.laneCount;
     state.selectedLane = previousState.selectedLane || 0;
-    state.notes = previousState.notes || [];
+    state.notes = (previousState.notes || []).map(normalizeNote);
   }
+  state.selectedNoteIds.clear();
   refreshUi();
 });
 
@@ -714,7 +930,72 @@ clearButton.addEventListener("click", () => {
   if (!state.notes.length) return;
   pushHistory();
   state.notes = [];
+  state.selectedNoteIds.clear();
   refreshUi();
+});
+
+addMetaButton.addEventListener("click", () => {
+  const key = metaKeyInput.value.trim();
+  if (!key || !state.selectedNoteIds.size) return;
+  pushHistory();
+  const value = metaValueInput.value;
+  getSelectedNotes().forEach((note) => {
+    const existing = note.meta.find((item) => item.key === key);
+    if (existing) existing.value = value;
+    else note.meta.push({ key, value });
+  });
+  metaKeyInput.value = "";
+  metaValueInput.value = "";
+  refreshUi();
+});
+
+removeMetaButton.addEventListener("click", () => {
+  const key = metaKeyInput.value.trim();
+  if (!key || !state.selectedNoteIds.size) return;
+  pushHistory();
+  getSelectedNotes().forEach((note) => {
+    note.meta = note.meta.filter((item) => item.key !== key);
+  });
+  refreshUi();
+});
+
+copyMenuItem.addEventListener("click", () => {
+  if (copyMenuItem.disabled) {
+    hideContextMenu();
+    return;
+  }
+  copySelectedNotes();
+  hideContextMenu();
+});
+
+pasteMenuItem.addEventListener("click", () => {
+  if (pasteMenuItem.disabled) {
+    hideContextMenu();
+    return;
+  }
+  if (state.contextTarget) {
+    pasteCopiedNotes(state.contextTarget.time, state.contextTarget.lane);
+  }
+  hideContextMenu();
+});
+
+deleteMenuItem.addEventListener("click", () => {
+  if (deleteMenuItem.disabled) {
+    hideContextMenu();
+    return;
+  }
+  deleteSelectedNotes();
+  hideContextMenu();
+});
+
+contextMenu.addEventListener("pointerdown", (event) => {
+  event.stopPropagation();
+});
+
+document.addEventListener("pointerdown", (event) => {
+  if (!contextMenu.hidden && !contextMenu.contains(event.target)) {
+    hideContextMenu();
+  }
 });
 
 levelInput.addEventListener("change", () => {
@@ -730,6 +1011,7 @@ lpbInput.addEventListener("change", () => {
   lpbInput.value = getLPB();
   draw();
 });
+noteSizeInput.addEventListener("input", draw);
 laneCountInput.addEventListener("change", () => setLaneCount(laneCountInput.value));
 autoFollowInput.addEventListener("change", () => {
   state.autoFollow = autoFollowInput.checked;
@@ -738,6 +1020,20 @@ autoFollowInput.addEventListener("change", () => {
 window.addEventListener("resize", resizeCanvas);
 window.addEventListener("keydown", (event) => {
   if (event.target.matches("input, select")) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    hideContextMenu();
+    selectNotes([]);
+    return;
+  }
+  if (event.key === "Delete" || event.key === "Backspace") {
+    if (state.selectedNoteIds.size) {
+      event.preventDefault();
+      hideContextMenu();
+      deleteSelectedNotes();
+    }
+    return;
+  }
   if (event.code === "Space" && !playButton.disabled) {
     event.preventDefault();
     playButton.click();
