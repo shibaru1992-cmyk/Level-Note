@@ -567,6 +567,7 @@ function drawBeatGrid(metrics) {
 function drawNotes(metrics) {
   const lanes = getLanes();
   const noteSize = getNoteSize();
+  const editing = state.editingPoint;
   ctx.save();
   ctx.beginPath();
   ctx.rect(metrics.padding.left, metrics.padding.top, metrics.plotWidth, metrics.lanePlotHeight);
@@ -588,28 +589,34 @@ function drawNotes(metrics) {
       ctx.strokeStyle = lane.color;
       ctx.beginPath();
       note.points.forEach((point, index) => {
-        const pointX = xFromTime(point.time, metrics);
-        const pointY = metrics.padding.top + point.lane * metrics.laneHeight + metrics.laneHeight / 2;
+        const renderedPoint =
+          editing?.noteId === note.id && editing.kind === "curve" && editing.pointIndex === index && editing.preview
+            ? editing.preview
+            : point;
+        const pointX = xFromTime(renderedPoint.time, metrics);
+        const pointY = metrics.padding.top + renderedPoint.lane * metrics.laneHeight + metrics.laneHeight / 2;
         if (index === 0) ctx.moveTo(pointX, pointY);
         else ctx.lineTo(pointX, pointY);
       });
       ctx.stroke();
       ctx.lineWidth = 1;
-      note.points.forEach((point) => {
-        const pointLane = lanes[point.lane];
+      note.points.forEach((point, index) => {
+        const isEditingPoint = editing?.noteId === note.id && editing.kind === "curve" && editing.pointIndex === index;
+        const renderedPoint = isEditingPoint && editing.preview ? editing.preview : point;
+        const pointLane = lanes[renderedPoint.lane];
         if (!pointLane) return;
         ctx.fillStyle = pointLane.color;
-        ctx.strokeStyle = isSelected || note.id === state.activeCurveId ? "#ffffff" : "#0b0d0f";
+        ctx.strokeStyle = isSelected || note.id === state.activeCurveId || isEditingPoint ? "#ffffff" : "#0b0d0f";
         ctx.beginPath();
         ctx.arc(
-          xFromTime(point.time, metrics),
-          metrics.padding.top + point.lane * metrics.laneHeight + metrics.laneHeight / 2,
-          isSelected || note.id === state.activeCurveId ? noteSize + 2 : noteSize,
+          xFromTime(renderedPoint.time, metrics),
+          metrics.padding.top + renderedPoint.lane * metrics.laneHeight + metrics.laneHeight / 2,
+          isSelected || note.id === state.activeCurveId || isEditingPoint ? noteSize + 2 : noteSize,
           0,
           Math.PI * 2,
         );
         ctx.fill();
-        ctx.lineWidth = isSelected || note.id === state.activeCurveId ? 3 : 1;
+        ctx.lineWidth = isSelected || note.id === state.activeCurveId || isEditingPoint ? 3 : 1;
         ctx.stroke();
         ctx.lineWidth = 1;
       });
@@ -651,21 +658,39 @@ function drawNotes(metrics) {
       return;
     }
     if (note.type === "hold") {
-      const endX = xFromTime(note.time + note.duration, metrics);
+      const holdStart =
+        editing?.noteId === note.id && editing.kind === "hold" && editing.pointIndex === "start" && editing.preview
+          ? editing.preview
+          : { time: note.time, lane: note.lane };
+      const holdEnd =
+        editing?.noteId === note.id && editing.kind === "hold" && editing.pointIndex === "end" && editing.preview
+          ? editing.preview
+          : { time: note.time + note.duration, lane: note.lane };
+      const startX = xFromTime(holdStart.time, metrics);
+      const startY = metrics.padding.top + holdStart.lane * metrics.laneHeight + metrics.laneHeight / 2;
+      const endX = xFromTime(holdEnd.time, metrics);
+      const endY = metrics.padding.top + holdEnd.lane * metrics.laneHeight + metrics.laneHeight / 2;
       ctx.lineWidth = Math.max(3, noteSize * 0.45);
       ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(endX, y);
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
       ctx.strokeStyle = lane.color;
       ctx.stroke();
       ctx.lineWidth = 1;
       ctx.strokeStyle = isSelected ? "#ffffff" : "#0b0d0f";
       ctx.beginPath();
-      ctx.arc(endX, y, isSelected ? noteSize + 2 : noteSize, 0, Math.PI * 2);
+      ctx.arc(endX, endY, isSelected || editing?.noteId === note.id && editing.pointIndex === "end" ? noteSize + 2 : noteSize, 0, Math.PI * 2);
       ctx.fill();
-      ctx.lineWidth = isSelected ? 3 : 1;
+      ctx.lineWidth = isSelected || editing?.noteId === note.id && editing.pointIndex === "end" ? 3 : 1;
       ctx.stroke();
       ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(startX, startY, isSelected || editing?.noteId === note.id && editing.pointIndex === "start" ? noteSize + 2 : noteSize, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = isSelected || editing?.noteId === note.id && editing.pointIndex === "start" ? 3 : 1;
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      return;
     }
     ctx.beginPath();
     ctx.arc(x, y, isSelected ? noteSize + 2 : noteSize, 0, Math.PI * 2);
@@ -723,48 +748,6 @@ function drawNotes(metrics) {
     }
   }
 
-  if (state.editingPoint) {
-    const edit = state.editingPoint;
-    const note = state.notes.find((item) => item.id === edit.noteId);
-    const preview = edit.preview;
-    if (note && preview) {
-      const isValid = validateEditedPoint(note, edit, preview);
-      const previewLane = lanes[preview.lane];
-      if (previewLane) {
-        ctx.save();
-        ctx.setLineDash(isValid ? [8, 6] : [3, 5]);
-        ctx.lineWidth = Math.max(2, noteSize * 0.36);
-        ctx.strokeStyle = isValid ? "rgba(255, 255, 255, 0.9)" : "rgba(255, 107, 107, 0.95)";
-        ctx.fillStyle = isValid ? previewLane.color : "rgba(255, 107, 107, 0.95)";
-        ctx.beginPath();
-        if (edit.kind === "hold") {
-          const fixed = edit.pointIndex === "start"
-            ? { time: note.time + note.duration, lane: note.lane }
-            : { time: note.time, lane: note.lane };
-          ctx.moveTo(xFromTime(fixed.time, metrics), metrics.padding.top + fixed.lane * metrics.laneHeight + metrics.laneHeight / 2);
-        } else {
-          const neighborIndex = edit.pointIndex > 0 ? edit.pointIndex - 1 : edit.pointIndex + 1;
-          const neighbor = note.points[neighborIndex];
-          ctx.moveTo(xFromTime(neighbor.time, metrics), metrics.padding.top + neighbor.lane * metrics.laneHeight + metrics.laneHeight / 2);
-        }
-        ctx.lineTo(xFromTime(preview.time, metrics), metrics.padding.top + preview.lane * metrics.laneHeight + metrics.laneHeight / 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.strokeStyle = "#ffffff";
-        ctx.beginPath();
-        ctx.arc(
-          xFromTime(preview.time, metrics),
-          metrics.padding.top + preview.lane * metrics.laneHeight + metrics.laneHeight / 2,
-          noteSize + 2,
-          0,
-          Math.PI * 2,
-        );
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-  }
   ctx.restore();
 }
 
