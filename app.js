@@ -10,7 +10,6 @@ const bpmInput = document.querySelector("#bpmInput");
 const snapInput = document.querySelector("#snapInput");
 const autoFollowInput = document.querySelector("#autoFollowInput");
 const noteType = document.querySelector("#noteType");
-const holdLength = document.querySelector("#holdLength");
 const noteSizeInput = document.querySelector("#noteSizeInput");
 const songMeta = document.querySelector("#songMeta");
 const currentTimeLabel = document.querySelector("#currentTime");
@@ -66,11 +65,15 @@ const state = {
   isDraggingMinimap: false,
   selectedNoteIds: new Set(),
   selectionDrag: null,
+  suppressNextPointerUp: false,
   copiedNotes: [],
   contextTarget: null,
   isResizingInspector: false,
   activeCurveId: null,
   curvePreviewPoint: null,
+  activeHoldStart: null,
+  holdPreviewPoint: null,
+  editingPoint: null,
   nextNoteId: 1,
   autoFollow: true,
 };
@@ -109,6 +112,24 @@ function getLPB() {
 
 function getNoteSize() {
   return clamp(Number(noteSizeInput.value) || 9, Number(noteSizeInput.min), Number(noteSizeInput.max));
+}
+
+function playErrorSound() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+  const audioContext = new AudioContextClass();
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  oscillator.type = "square";
+  oscillator.frequency.setValueAtTime(180, audioContext.currentTime);
+  oscillator.frequency.exponentialRampToValueAtTime(90, audioContext.currentTime + 0.12);
+  gain.gain.setValueAtTime(0.08, audioContext.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.14);
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.14);
+  oscillator.addEventListener("ended", () => audioContext.close());
 }
 
 function getViewSpan() {
@@ -639,6 +660,12 @@ function drawNotes(metrics) {
       ctx.stroke();
       ctx.lineWidth = 1;
       ctx.strokeStyle = isSelected ? "#ffffff" : "#0b0d0f";
+      ctx.beginPath();
+      ctx.arc(endX, y, isSelected ? noteSize + 2 : noteSize, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = isSelected ? 3 : 1;
+      ctx.stroke();
+      ctx.lineWidth = 1;
     }
     ctx.beginPath();
     ctx.arc(x, y, isSelected ? noteSize + 2 : noteSize, 0, Math.PI * 2);
@@ -658,6 +685,85 @@ function drawNotes(metrics) {
     ctx.strokeStyle = "#62a8ff";
     ctx.fillRect(left, top, width, height);
     ctx.strokeRect(left, top, width, height);
+  }
+
+  if (state.activeHoldStart) {
+    const start = state.activeHoldStart;
+    const preview = state.holdPreviewPoint || start;
+    const lane = lanes[start.lane];
+    if (lane) {
+      const startX = xFromTime(start.time, metrics);
+      const startY = metrics.padding.top + start.lane * metrics.laneHeight + metrics.laneHeight / 2;
+      const previewX = xFromTime(preview.time, metrics);
+      const previewY = metrics.padding.top + preview.lane * metrics.laneHeight + metrics.laneHeight / 2;
+      const isValid = preview.lane === start.lane && preview.time > start.time;
+      ctx.save();
+      ctx.setLineDash(isValid ? [8, 6] : [3, 5]);
+      ctx.lineWidth = Math.max(2, noteSize * 0.36);
+      ctx.strokeStyle = isValid ? lane.color : "rgba(255, 107, 107, 0.95)";
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(previewX, previewY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = lane.color;
+      ctx.strokeStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(startX, startY, noteSize + 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (preview !== start) {
+        ctx.fillStyle = isValid ? lane.color : "rgba(255, 107, 107, 0.95)";
+        ctx.beginPath();
+        ctx.arc(previewX, previewY, noteSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  if (state.editingPoint) {
+    const edit = state.editingPoint;
+    const note = state.notes.find((item) => item.id === edit.noteId);
+    const preview = edit.preview;
+    if (note && preview) {
+      const isValid = validateEditedPoint(note, edit, preview);
+      const previewLane = lanes[preview.lane];
+      if (previewLane) {
+        ctx.save();
+        ctx.setLineDash(isValid ? [8, 6] : [3, 5]);
+        ctx.lineWidth = Math.max(2, noteSize * 0.36);
+        ctx.strokeStyle = isValid ? "rgba(255, 255, 255, 0.9)" : "rgba(255, 107, 107, 0.95)";
+        ctx.fillStyle = isValid ? previewLane.color : "rgba(255, 107, 107, 0.95)";
+        ctx.beginPath();
+        if (edit.kind === "hold") {
+          const fixed = edit.pointIndex === "start"
+            ? { time: note.time + note.duration, lane: note.lane }
+            : { time: note.time, lane: note.lane };
+          ctx.moveTo(xFromTime(fixed.time, metrics), metrics.padding.top + fixed.lane * metrics.laneHeight + metrics.laneHeight / 2);
+        } else {
+          const neighborIndex = edit.pointIndex > 0 ? edit.pointIndex - 1 : edit.pointIndex + 1;
+          const neighbor = note.points[neighborIndex];
+          ctx.moveTo(xFromTime(neighbor.time, metrics), metrics.padding.top + neighbor.lane * metrics.laneHeight + metrics.laneHeight / 2);
+        }
+        ctx.lineTo(xFromTime(preview.time, metrics), metrics.padding.top + preview.lane * metrics.laneHeight + metrics.laneHeight / 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.strokeStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(
+          xFromTime(preview.time, metrics),
+          metrics.padding.top + preview.lane * metrics.laneHeight + metrics.laneHeight / 2,
+          noteSize + 2,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
   }
   ctx.restore();
 }
@@ -726,6 +832,10 @@ function addNote(time, lane) {
     addCurvePoint(time, lane);
     return;
   }
+  if (type === "hold") {
+    addHoldPoint(time, lane);
+    return;
+  }
   const note = {
     id: createNoteId(),
     time: Number(snapTime(time).toFixed(3)),
@@ -733,15 +843,145 @@ function addNote(time, lane) {
     type,
     meta: [],
   };
-  if (type === "hold") {
-    note.duration = Number(clamp(Number(holdLength.value), 0.05, 10).toFixed(3));
-  }
   if (hasOverlappingNote(note)) return;
   pushHistory();
   state.notes.push(note);
   state.selectedNoteIds = new Set([note.id]);
   sortNotes();
   refreshUi();
+}
+
+function addHoldPoint(time, lane) {
+  const point = {
+    time: Number(snapTime(time).toFixed(3)),
+    lane,
+  };
+
+  if (!state.activeHoldStart) {
+    state.activeHoldStart = point;
+    state.holdPreviewPoint = point;
+    state.selectedNoteIds.clear();
+    refreshUi();
+    return;
+  }
+
+  if (point.lane !== state.activeHoldStart.lane || point.time <= state.activeHoldStart.time) {
+    state.holdPreviewPoint = point;
+    playErrorSound();
+    draw();
+    return;
+  }
+
+  const note = {
+    id: createNoteId(),
+    time: state.activeHoldStart.time,
+    lane: state.activeHoldStart.lane,
+    type: "hold",
+    duration: Number((point.time - state.activeHoldStart.time).toFixed(3)),
+    meta: [],
+  };
+
+  if (hasOverlappingNote(note)) {
+    playErrorSound();
+    draw();
+    return;
+  }
+
+  pushHistory();
+  state.notes.push(note);
+  state.selectedNoteIds = new Set([note.id]);
+  state.activeHoldStart = null;
+  state.holdPreviewPoint = null;
+  sortNotes();
+  refreshUi();
+}
+
+function cancelActiveHold() {
+  if (!state.activeHoldStart) return false;
+  state.activeHoldStart = null;
+  state.holdPreviewPoint = null;
+  refreshUi();
+  return true;
+}
+
+function startEditPoint(hit) {
+  state.editingPoint = {
+    noteId: hit.note.id,
+    kind: hit.kind,
+    pointIndex: hit.pointIndex,
+    preview: null,
+  };
+  state.selectedNoteIds = new Set([hit.note.id]);
+  hideContextMenu();
+  finishActiveCurve();
+  cancelActiveHold();
+  refreshUi();
+}
+
+function cancelEditPoint() {
+  if (!state.editingPoint) return false;
+  state.editingPoint = null;
+  refreshUi();
+  return true;
+}
+
+function validateEditedPoint(note, edit, point) {
+  if (edit.kind === "hold") {
+    const start = edit.pointIndex === "start" ? point : { time: note.time, lane: note.lane };
+    const end = edit.pointIndex === "end" ? point : { time: note.time + note.duration, lane: note.lane };
+    return start.lane === end.lane && end.time > start.time;
+  }
+
+  if (edit.kind === "curve") {
+    return point.lane >= 0 && point.lane < state.laneCount;
+  }
+
+  return false;
+}
+
+function commitEditPoint(point) {
+  const edit = state.editingPoint;
+  if (!edit) return false;
+  const note = state.notes.find((item) => item.id === edit.noteId);
+  if (!note) {
+    state.editingPoint = null;
+    return false;
+  }
+  if (!validateEditedPoint(note, edit, point)) {
+    state.editingPoint.preview = point;
+    playErrorSound();
+    draw();
+    return true;
+  }
+
+  const nextNote = structuredClone(note);
+  if (edit.kind === "hold") {
+    const start = edit.pointIndex === "start" ? point : { time: note.time, lane: note.lane };
+    const end = edit.pointIndex === "end" ? point : { time: note.time + note.duration, lane: note.lane };
+    nextNote.time = start.time;
+    nextNote.lane = start.lane;
+    nextNote.duration = Number((end.time - start.time).toFixed(3));
+  } else {
+    nextNote.points[edit.pointIndex] = point;
+    nextNote.time = nextNote.points[0].time;
+    nextNote.lane = nextNote.points[0].lane;
+  }
+  normalizeNote(nextNote);
+
+  const otherNotes = state.notes.filter((item) => item.id !== note.id);
+  if (otherNotes.some((existing) => notesOverlap(existing, nextNote))) {
+    state.editingPoint.preview = point;
+    playErrorSound();
+    draw();
+    return true;
+  }
+
+  pushHistory();
+  Object.assign(note, nextNote);
+  sortNotes();
+  state.editingPoint = null;
+  refreshUi();
+  return true;
 }
 
 function addCurvePoint(time, lane) {
@@ -964,7 +1204,27 @@ canvas.addEventListener("pointerdown", (event) => {
   if (!isInTimePlot(x, y, metrics)) return;
   const lane = laneFromY(y, metrics);
   if (lane === null) return;
-  const note = noteType.value === "curve" ? null : findNoteAt(x, y, metrics);
+
+  if (event.detail >= 2) {
+    const hit = findEditablePointAt(x, y, metrics);
+    if (hit) {
+      state.selectionDrag = null;
+      state.suppressNextPointerUp = true;
+      startEditPoint(hit);
+      return;
+    }
+  }
+
+  if (state.editingPoint) {
+    commitEditPoint({
+      time: Number(snapTime(timeFromX(x, metrics)).toFixed(3)),
+      lane,
+    });
+    return;
+  }
+
+  const editableHit = findEditablePointAt(x, y, metrics);
+  const note = noteType.value === "curve" && state.activeCurveId ? null : editableHit?.note || findNoteAt(x, y, metrics);
   state.selectionDrag = {
     startX: x,
     startY: y,
@@ -982,6 +1242,32 @@ canvas.addEventListener("pointermove", (event) => {
   const metrics = getCanvasMetrics();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
+
+  if (state.editingPoint) {
+    if (isInTimePlot(x, y, metrics)) {
+      state.editingPoint.preview = {
+        time: Number(snapTime(timeFromX(x, metrics)).toFixed(3)),
+        lane: laneFromY(y, metrics),
+      };
+    } else {
+      state.editingPoint.preview = null;
+    }
+    draw();
+    return;
+  }
+
+  if (state.activeHoldStart && !state.selectionDrag) {
+    if (isInTimePlot(x, y, metrics)) {
+      state.holdPreviewPoint = {
+        time: Number(snapTime(timeFromX(x, metrics)).toFixed(3)),
+        lane: laneFromY(y, metrics),
+      };
+    } else {
+      state.holdPreviewPoint = null;
+    }
+    draw();
+    return;
+  }
 
   if (state.activeCurveId && !state.selectionDrag) {
     if (isInTimePlot(x, y, metrics)) {
@@ -1004,6 +1290,10 @@ canvas.addEventListener("pointermove", (event) => {
 });
 
 canvas.addEventListener("pointerup", (event) => {
+  if (state.suppressNextPointerUp) {
+    state.suppressNextPointerUp = false;
+    return;
+  }
   if (!state.selectionDrag) return;
   const metrics = getCanvasMetrics();
   const drag = state.selectionDrag;
@@ -1024,12 +1314,26 @@ canvas.addEventListener("pointerup", (event) => {
 canvas.addEventListener("pointercancel", () => {
   state.selectionDrag = null;
   state.curvePreviewPoint = null;
+  state.holdPreviewPoint = null;
   draw();
+});
+
+canvas.addEventListener("dblclick", (event) => {
+  event.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const metrics = getCanvasMetrics();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  if (!isInTimePlot(x, y, metrics)) return;
+  const hit = findEditablePointAt(x, y, metrics);
+  if (hit) startEditPoint(hit);
 });
 
 canvas.addEventListener("contextmenu", (event) => {
   event.preventDefault();
+  if (cancelEditPoint()) return;
   if (finishActiveCurve()) return;
+  if (cancelActiveHold()) return;
   const rect = canvas.getBoundingClientRect();
   const metrics = getCanvasMetrics();
   const x = event.clientX - rect.left;
@@ -1096,6 +1400,39 @@ function findNoteAt(x, y, metrics) {
     const left = Math.min(noteX, noteEndX) - noteSize - hitPadding;
     const right = Math.max(noteX, noteEndX) + noteSize + hitPadding;
     if (x >= left && x <= right && Math.abs(y - noteY) <= noteSize + hitPadding) return note;
+  }
+  return null;
+}
+
+function findEditablePointAt(x, y, metrics) {
+  const noteSize = getNoteSize();
+  const hitPadding = Math.max(6, noteSize * 0.6);
+  for (let i = state.notes.length - 1; i >= 0; i -= 1) {
+    const note = state.notes[i];
+    if (note.type === "hold") {
+      const points = [
+        { role: "start", time: note.time, lane: note.lane },
+        { role: "end", time: note.time + note.duration, lane: note.lane },
+      ];
+      for (const point of points) {
+        const pointX = xFromTime(point.time, metrics);
+        const pointY = metrics.padding.top + point.lane * metrics.laneHeight + metrics.laneHeight / 2;
+        if (Math.abs(x - pointX) <= noteSize + hitPadding && Math.abs(y - pointY) <= noteSize + hitPadding) {
+          return { note, kind: "hold", pointIndex: point.role };
+        }
+      }
+    }
+
+    if (note.type === "curve") {
+      for (let pointIndex = note.points.length - 1; pointIndex >= 0; pointIndex -= 1) {
+        const point = note.points[pointIndex];
+        const pointX = xFromTime(point.time, metrics);
+        const pointY = metrics.padding.top + point.lane * metrics.laneHeight + metrics.laneHeight / 2;
+        if (Math.abs(x - pointX) <= noteSize + hitPadding && Math.abs(y - pointY) <= noteSize + hitPadding) {
+          return { note, kind: "curve", pointIndex };
+        }
+      }
+    }
   }
   return null;
 }
@@ -1267,6 +1604,7 @@ lpbInput.addEventListener("change", () => {
 noteSizeInput.addEventListener("input", draw);
 noteType.addEventListener("change", () => {
   if (noteType.value !== "curve") finishActiveCurve();
+  if (noteType.value !== "hold") cancelActiveHold();
 });
 laneCountInput.addEventListener("change", () => setLaneCount(laneCountInput.value));
 autoFollowInput.addEventListener("change", () => {
@@ -1279,6 +1617,9 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
     hideContextMenu();
+    cancelEditPoint();
+    cancelActiveHold();
+    finishActiveCurve();
     selectNotes([]);
     return;
   }
