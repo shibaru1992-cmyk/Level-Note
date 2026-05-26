@@ -332,6 +332,17 @@ function notesOverlap(a, b) {
   return rangeA.start < rangeB.end && rangeB.start < rangeA.end;
 }
 
+function isValidHoldPoints(start, end) {
+  return start.lane === end.lane && end.time > start.time;
+}
+
+function getHoldEditPoints(note, edit, point) {
+  return {
+    start: edit.pointIndex === "start" ? point : { time: note.time, lane: note.lane },
+    end: edit.pointIndex === "end" ? point : { time: note.time + note.duration, lane: note.lane },
+  };
+}
+
 function hasOverlappingNote(note) {
   return state.notes.some((existing) => notesOverlap(existing, note));
 }
@@ -585,24 +596,35 @@ function drawNotes(metrics) {
     ctx.fillStyle = lane.color;
     ctx.strokeStyle = isSelected ? "#ffffff" : "#0b0d0f";
     if (note.type === "curve") {
-      ctx.lineWidth = Math.max(3, noteSize * 0.45);
-      ctx.strokeStyle = lane.color;
-      ctx.beginPath();
+      const renderedPoints = note.points.map((point, index) =>
+        editing?.noteId === note.id && editing.kind === "curve" && editing.pointIndex === index && editing.preview
+          ? editing.preview
+          : point,
+      );
+      for (let index = 0; index < renderedPoints.length - 1; index += 1) {
+        const from = renderedPoints[index];
+        const to = renderedPoints[index + 1];
+        const segmentIsEditing =
+          editing?.noteId === note.id &&
+          editing.kind === "curve" &&
+          (editing.pointIndex === index || editing.pointIndex === index + 1);
+        ctx.save();
+        if (segmentIsEditing) ctx.setLineDash([8, 6]);
+        ctx.lineWidth = Math.max(3, noteSize * 0.45);
+        ctx.strokeStyle = lane.color;
+        ctx.beginPath();
+        ctx.moveTo(xFromTime(from.time, metrics), metrics.padding.top + from.lane * metrics.laneHeight + metrics.laneHeight / 2);
+        ctx.lineTo(xFromTime(to.time, metrics), metrics.padding.top + to.lane * metrics.laneHeight + metrics.laneHeight / 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.lineWidth = 1;
       note.points.forEach((point, index) => {
         const renderedPoint =
           editing?.noteId === note.id && editing.kind === "curve" && editing.pointIndex === index && editing.preview
             ? editing.preview
             : point;
-        const pointX = xFromTime(renderedPoint.time, metrics);
-        const pointY = metrics.padding.top + renderedPoint.lane * metrics.laneHeight + metrics.laneHeight / 2;
-        if (index === 0) ctx.moveTo(pointX, pointY);
-        else ctx.lineTo(pointX, pointY);
-      });
-      ctx.stroke();
-      ctx.lineWidth = 1;
-      note.points.forEach((point, index) => {
         const isEditingPoint = editing?.noteId === note.id && editing.kind === "curve" && editing.pointIndex === index;
-        const renderedPoint = isEditingPoint && editing.preview ? editing.preview : point;
         const pointLane = lanes[renderedPoint.lane];
         if (!pointLane) return;
         ctx.fillStyle = pointLane.color;
@@ -670,24 +692,31 @@ function drawNotes(metrics) {
       const startY = metrics.padding.top + holdStart.lane * metrics.laneHeight + metrics.laneHeight / 2;
       const endX = xFromTime(holdEnd.time, metrics);
       const endY = metrics.padding.top + holdEnd.lane * metrics.laneHeight + metrics.laneHeight / 2;
+      const isEditingHold = editing?.noteId === note.id && editing.kind === "hold";
+      const isValidEdit = !isEditingHold || !editing.preview || validateEditedPoint(note, editing, editing.preview);
+      ctx.save();
+      if (isEditingHold) ctx.setLineDash([8, 6]);
       ctx.lineWidth = Math.max(3, noteSize * 0.45);
       ctx.beginPath();
       ctx.moveTo(startX, startY);
       ctx.lineTo(endX, endY);
-      ctx.strokeStyle = lane.color;
+      ctx.strokeStyle = isEditingHold && !isValidEdit ? "rgba(255, 107, 107, 0.95)" : lane.color;
       ctx.stroke();
+      ctx.restore();
       ctx.lineWidth = 1;
       ctx.strokeStyle = isSelected ? "#ffffff" : "#0b0d0f";
+      ctx.fillStyle = holdEnd.lane === note.lane ? lane.color : "rgba(255, 107, 107, 0.95)";
       ctx.beginPath();
-      ctx.arc(endX, endY, isSelected || editing?.noteId === note.id && editing.pointIndex === "end" ? noteSize + 2 : noteSize, 0, Math.PI * 2);
+      ctx.arc(endX, endY, isSelected || (isEditingHold && editing.pointIndex === "end") ? noteSize + 2 : noteSize, 0, Math.PI * 2);
       ctx.fill();
-      ctx.lineWidth = isSelected || editing?.noteId === note.id && editing.pointIndex === "end" ? 3 : 1;
+      ctx.lineWidth = isSelected || (isEditingHold && editing.pointIndex === "end") ? 3 : 1;
       ctx.stroke();
       ctx.lineWidth = 1;
+      ctx.fillStyle = holdStart.lane === note.lane ? lane.color : "rgba(255, 107, 107, 0.95)";
       ctx.beginPath();
-      ctx.arc(startX, startY, isSelected || editing?.noteId === note.id && editing.pointIndex === "start" ? noteSize + 2 : noteSize, 0, Math.PI * 2);
+      ctx.arc(startX, startY, isSelected || (isEditingHold && editing.pointIndex === "start") ? noteSize + 2 : noteSize, 0, Math.PI * 2);
       ctx.fill();
-      ctx.lineWidth = isSelected || editing?.noteId === note.id && editing.pointIndex === "start" ? 3 : 1;
+      ctx.lineWidth = isSelected || (isEditingHold && editing.pointIndex === "start") ? 3 : 1;
       ctx.stroke();
       ctx.lineWidth = 1;
       return;
@@ -721,7 +750,7 @@ function drawNotes(metrics) {
       const startY = metrics.padding.top + start.lane * metrics.laneHeight + metrics.laneHeight / 2;
       const previewX = xFromTime(preview.time, metrics);
       const previewY = metrics.padding.top + preview.lane * metrics.laneHeight + metrics.laneHeight / 2;
-      const isValid = preview.lane === start.lane && preview.time > start.time;
+      const isValid = isValidHoldPoints(start, preview);
       ctx.save();
       ctx.setLineDash(isValid ? [8, 6] : [3, 5]);
       ctx.lineWidth = Math.max(2, noteSize * 0.36);
@@ -848,7 +877,7 @@ function addHoldPoint(time, lane) {
     return;
   }
 
-  if (point.lane !== state.activeHoldStart.lane || point.time <= state.activeHoldStart.time) {
+  if (!isValidHoldPoints(state.activeHoldStart, point)) {
     state.holdPreviewPoint = point;
     playErrorSound();
     draw();
@@ -888,6 +917,8 @@ function cancelActiveHold() {
 }
 
 function startEditPoint(hit) {
+  const isCurveTail = hit.kind === "curve" && hit.pointIndex === hit.note.points.length - 1;
+
   state.editingPoint = {
     noteId: hit.note.id,
     kind: hit.kind,
@@ -896,7 +927,12 @@ function startEditPoint(hit) {
   };
   state.selectedNoteIds = new Set([hit.note.id]);
   hideContextMenu();
-  finishActiveCurve();
+  if (isCurveTail) {
+    state.activeCurveId = hit.note.id;
+    state.curvePreviewPoint = null;
+  } else {
+    finishActiveCurve();
+  }
   cancelActiveHold();
   refreshUi();
 }
@@ -910,9 +946,8 @@ function cancelEditPoint() {
 
 function validateEditedPoint(note, edit, point) {
   if (edit.kind === "hold") {
-    const start = edit.pointIndex === "start" ? point : { time: note.time, lane: note.lane };
-    const end = edit.pointIndex === "end" ? point : { time: note.time + note.duration, lane: note.lane };
-    return start.lane === end.lane && end.time > start.time;
+    const { start, end } = getHoldEditPoints(note, edit, point);
+    return isValidHoldPoints(start, end);
   }
 
   if (edit.kind === "curve") {
@@ -938,9 +973,9 @@ function commitEditPoint(point) {
   }
 
   const nextNote = structuredClone(note);
+  const keepCurveActive = edit.kind === "curve" && edit.pointIndex === note.points.length - 1;
   if (edit.kind === "hold") {
-    const start = edit.pointIndex === "start" ? point : { time: note.time, lane: note.lane };
-    const end = edit.pointIndex === "end" ? point : { time: note.time + note.duration, lane: note.lane };
+    const { start, end } = getHoldEditPoints(note, edit, point);
     nextNote.time = start.time;
     nextNote.lane = start.lane;
     nextNote.duration = Number((end.time - start.time).toFixed(3));
@@ -963,6 +998,10 @@ function commitEditPoint(point) {
   Object.assign(note, nextNote);
   sortNotes();
   state.editingPoint = null;
+  if (keepCurveActive) {
+    state.activeCurveId = note.id;
+    state.curvePreviewPoint = null;
+  }
   refreshUi();
   return true;
 }
