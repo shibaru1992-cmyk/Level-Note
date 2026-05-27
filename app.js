@@ -20,8 +20,30 @@ const selectionInfo = document.querySelector("#selectionInfo");
 const selectedNotesBody = document.querySelector("#selectedNotesBody");
 const noteInspectorTab = document.querySelector("#noteInspectorTab");
 const noteSettingTab = document.querySelector("#noteSettingTab");
+const noteAnalysisTab = document.querySelector("#noteAnalysisTab");
 const noteInspectorPanel = document.querySelector("#noteInspectorPanel");
 const noteSettingPanel = document.querySelector("#noteSettingPanel");
+const noteAnalysisPanel = document.querySelector("#noteAnalysisPanel");
+const analysisElements = {
+  kpiScore: document.querySelector("#kpiScore"),
+  kpiDifficultyLabel: document.querySelector("#kpiDifficultyLabel"),
+  kpiPeakNps: document.querySelector("#kpiPeakNps"),
+  kpiAvgNps: document.querySelector("#kpiAvgNps"),
+  kpiBpm: document.querySelector("#kpiBpm"),
+  kpiTotalNotes: document.querySelector("#kpiTotalNotes"),
+  kpiDuration: document.querySelector("#kpiDuration"),
+  kpiMaxChord: document.querySelector("#kpiMaxChord"),
+  npsChart: document.querySelector("#npsChart"),
+  chordChart: document.querySelector("#chordChart"),
+  radarChart: document.querySelector("#radarChart"),
+  columnChart: document.querySelector("#columnChart"),
+  patternTableBody: document.querySelector("#patternTableBody"),
+  laneHeatmap: document.querySelector("#laneHeatmap"),
+};
+analysisElements.npsCtx = analysisElements.npsChart.getContext("2d");
+analysisElements.chordCtx = analysisElements.chordChart.getContext("2d");
+analysisElements.radarCtx = analysisElements.radarChart.getContext("2d");
+analysisElements.columnCtx = analysisElements.columnChart.getContext("2d");
 const metaKeyInput = document.querySelector("#metaKeyInput");
 const metaValueInput = document.querySelector("#metaValueInput");
 const addMetaButton = document.querySelector("#addMetaButton");
@@ -82,6 +104,12 @@ const state = {
   autoFollow: true,
   activeInspectorTab: "inspector",
 };
+
+const renderAnalysis = createAnalysisRenderer({
+  state,
+  getBpm: () => Number(bpmInput.value) || 0,
+  elements: analysisElements,
+});
 
 function getLanes() {
   return Array.from({ length: state.laneCount }, (_, id) => ({
@@ -377,6 +405,7 @@ function resizeCanvas() {
   miniCtx.setTransform(scale, 0, 0, scale, 0, 0);
   draw();
   drawMinimap();
+  renderAnalysis();
 }
 
 function getCanvasMetrics() {
@@ -807,6 +836,7 @@ function refreshUi() {
   undoButton.disabled = state.history.length === 0;
   laneCountInput.value = state.laneCount;
   renderInspector();
+  renderAnalysis();
   draw();
 }
 
@@ -838,12 +868,21 @@ function renderInspector() {
 function setInspectorTab(tab) {
   state.activeInspectorTab = tab;
   const isInspector = tab === "inspector";
+  const isSetting = tab === "setting";
+  const isAnalysis = tab === "analysis";
   noteInspectorTab.classList.toggle("active", isInspector);
-  noteSettingTab.classList.toggle("active", !isInspector);
+  noteSettingTab.classList.toggle("active", isSetting);
+  noteAnalysisTab.classList.toggle("active", isAnalysis);
   noteInspectorTab.setAttribute("aria-selected", String(isInspector));
-  noteSettingTab.setAttribute("aria-selected", String(!isInspector));
+  noteSettingTab.setAttribute("aria-selected", String(isSetting));
+  noteAnalysisTab.setAttribute("aria-selected", String(isAnalysis));
   noteInspectorPanel.hidden = !isInspector;
-  noteSettingPanel.hidden = isInspector;
+  noteSettingPanel.hidden = !isSetting;
+  noteAnalysisPanel.hidden = !isAnalysis;
+  if (isAnalysis) {
+    resizeCanvas();
+    renderAnalysis();
+  }
 }
 
 function setAudioEnabled(enabled) {
@@ -1541,6 +1580,7 @@ clearButton.addEventListener("click", () => {
 
 noteInspectorTab.addEventListener("click", () => setInspectorTab("inspector"));
 noteSettingTab.addEventListener("click", () => setInspectorTab("setting"));
+noteAnalysisTab.addEventListener("click", () => setInspectorTab("analysis"));
 
 addMetaButton.addEventListener("click", () => {
   const key = metaKeyInput.value.trim();

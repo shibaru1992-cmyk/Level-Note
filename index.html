@@ -133,11 +133,79 @@
           <div class="empty-panel">Note Setting content will be added later.</div>
         </div>
         <div id="noteAnalysisPanel" class="inspector-body analysis-panel" role="tabpanel" aria-labelledby="noteAnalysisTab" hidden>
-          <div class="analysis-summary">
-            <strong id="difficultyScore">0</strong>
-            <span id="difficultyLabel">No level data</span>
+          <div class="analysis-dashboard">
+            <div class="analysis-kpis">
+              <div class="analysis-kpi accent-purple">
+                <span>Difficulty Score</span>
+                <strong id="kpiScore">0</strong>
+                <small id="kpiDifficultyLabel">No data</small>
+              </div>
+              <div class="analysis-kpi accent-yellow">
+                <span>Peak NPS</span>
+                <strong id="kpiPeakNps">0</strong>
+                <small>notes/sec</small>
+              </div>
+              <div class="analysis-kpi accent-teal">
+                <span>Avg NPS</span>
+                <strong id="kpiAvgNps">0</strong>
+                <small>notes/sec</small>
+              </div>
+              <div class="analysis-kpi accent-blue">
+                <span>BPM</span>
+                <strong id="kpiBpm">0</strong>
+                <small>beats/min</small>
+              </div>
+              <div class="analysis-kpi accent-green">
+                <span>Total Notes</span>
+                <strong id="kpiTotalNotes">0</strong>
+                <small id="kpiDuration">0s duration</small>
+              </div>
+              <div class="analysis-kpi accent-red">
+                <span>Max Chord</span>
+                <strong id="kpiMaxChord">0</strong>
+                <small>fingers simultaneous</small>
+              </div>
+            </div>
+            <div class="analysis-card full">
+              <h3>NPS Over Time - Intensity Map</h3>
+              <canvas id="npsChart" width="1200" height="220"></canvas>
+            </div>
+            <div class="analysis-grid">
+              <div class="analysis-card">
+                <h3>Chord Distribution</h3>
+                <canvas id="chordChart" width="600" height="220"></canvas>
+              </div>
+              <div class="analysis-card">
+                <h3>Difficulty Breakdown (Radar)</h3>
+                <canvas id="radarChart" width="600" height="220"></canvas>
+              </div>
+            </div>
+            <div class="analysis-grid">
+              <div class="analysis-card">
+                <h3>Lane Hit Distribution</h3>
+                <canvas id="columnChart" width="600" height="220"></canvas>
+              </div>
+              <div class="analysis-card">
+                <h3>Pattern Type Breakdown</h3>
+                <table class="pattern-table">
+                  <thead>
+                    <tr>
+                      <th>Pattern</th>
+                      <th>Count</th>
+                      <th>%</th>
+                      <th>Frequency</th>
+                    </tr>
+                  </thead>
+                  <tbody id="patternTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="analysis-card full">
+              <h3>Lane Heatmap - Note Density by Segment</h3>
+              <div id="laneHeatmap" class="lane-heatmap"></div>
+              <div class="heatmap-legend"><span>Low</span><i></i><span>High</span></div>
+            </div>
           </div>
-          <canvas id="difficultyChart" width="1200" height="160"></canvas>
         </div>
       </section>
     </main>
@@ -149,6 +217,7 @@
     </div>
 
     <audio id="audio" preload="metadata"></audio>
+    <script src="analysis.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
