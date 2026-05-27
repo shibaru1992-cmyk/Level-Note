@@ -18,6 +18,10 @@ const noteCount = document.querySelector("#noteCount");
 const selectionCount = document.querySelector("#selectionCount");
 const selectionInfo = document.querySelector("#selectionInfo");
 const selectedNotesBody = document.querySelector("#selectedNotesBody");
+const noteInspectorTab = document.querySelector("#noteInspectorTab");
+const noteSettingTab = document.querySelector("#noteSettingTab");
+const noteInspectorPanel = document.querySelector("#noteInspectorPanel");
+const noteSettingPanel = document.querySelector("#noteSettingPanel");
 const metaKeyInput = document.querySelector("#metaKeyInput");
 const metaValueInput = document.querySelector("#metaValueInput");
 const addMetaButton = document.querySelector("#addMetaButton");
@@ -76,6 +80,7 @@ const state = {
   editingPoint: null,
   nextNoteId: 1,
   autoFollow: true,
+  activeInspectorTab: "inspector",
 };
 
 function getLanes() {
@@ -830,6 +835,17 @@ function renderInspector() {
     .join("");
 }
 
+function setInspectorTab(tab) {
+  state.activeInspectorTab = tab;
+  const isInspector = tab === "inspector";
+  noteInspectorTab.classList.toggle("active", isInspector);
+  noteSettingTab.classList.toggle("active", !isInspector);
+  noteInspectorTab.setAttribute("aria-selected", String(isInspector));
+  noteSettingTab.setAttribute("aria-selected", String(!isInspector));
+  noteInspectorPanel.hidden = !isInspector;
+  noteSettingPanel.hidden = isInspector;
+}
+
 function setAudioEnabled(enabled) {
   playButton.disabled = !enabled;
   stopButton.disabled = !enabled;
@@ -1522,6 +1538,9 @@ clearButton.addEventListener("click", () => {
   state.selectedNoteIds.clear();
   refreshUi();
 });
+
+noteInspectorTab.addEventListener("click", () => setInspectorTab("inspector"));
+noteSettingTab.addEventListener("click", () => setInspectorTab("setting"));
 
 addMetaButton.addEventListener("click", () => {
   const key = metaKeyInput.value.trim();

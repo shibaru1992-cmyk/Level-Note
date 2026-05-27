@@ -97,10 +97,14 @@
       <section class="note-inspector">
         <div id="inspectorResizeHandle" class="inspector-resize" title="Drag de resize Inspector"></div>
         <div class="section-title">
-          <h2>Inspector</h2>
+          <div class="inspector-tabs" role="tablist" aria-label="Note panel tabs">
+            <button id="noteInspectorTab" class="active" type="button" role="tab" aria-selected="true">Note Inspector</button>
+            <button id="noteSettingTab" type="button" role="tab" aria-selected="false">Note Setting</button>
+            <button id="noteAnalysisTab" type="button" role="tab" aria-selected="false">Note Analysis</button>
+          </div>
           <button id="clearButton" type="button" disabled>Clear</button>
         </div>
-        <div class="inspector-body">
+        <div id="noteInspectorPanel" class="inspector-body" role="tabpanel" aria-labelledby="noteInspectorTab">
           <div class="selection-summary">
             <strong id="selectionCount">0 selected</strong>
             <span id="selectionInfo">Click note de select, drag de select nhieu note</span>
@@ -124,6 +128,16 @@
               <tbody id="selectedNotesBody"></tbody>
             </table>
           </div>
+        </div>
+        <div id="noteSettingPanel" class="inspector-body setting-panel" role="tabpanel" aria-labelledby="noteSettingTab" hidden>
+          <div class="empty-panel">Note Setting content will be added later.</div>
+        </div>
+        <div id="noteAnalysisPanel" class="inspector-body analysis-panel" role="tabpanel" aria-labelledby="noteAnalysisTab" hidden>
+          <div class="analysis-summary">
+            <strong id="difficultyScore">0</strong>
+            <span id="difficultyLabel">No level data</span>
+          </div>
+          <canvas id="difficultyChart" width="1200" height="160"></canvas>
         </div>
       </section>
     </main>

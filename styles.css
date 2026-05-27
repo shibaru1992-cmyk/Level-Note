@@ -346,12 +346,52 @@ h2 {
   border-bottom: 1px solid var(--line);
 }
 
+.inspector-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0f1215;
+}
+
+.inspector-tabs button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 11px;
+}
+
+.inspector-tabs button.active {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
 .inspector-body {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 10px;
   height: calc(100% - 56px);
   padding: 10px 14px 14px;
+}
+
+.inspector-body[hidden] {
+  display: none;
+}
+
+.setting-panel {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.empty-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .selection-summary {
