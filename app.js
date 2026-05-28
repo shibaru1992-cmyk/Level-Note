@@ -344,6 +344,7 @@ function pushHistory() {
     JSON.stringify({
       laneCount: state.laneCount,
       selectedLane: state.selectedLane,
+      metaKeyDefs: state.metaKeyDefs,
       notes: state.notes,
     }),
   );
@@ -1258,7 +1259,7 @@ function openMetaKeyDefModal(mode, key) {
     metaKeyDefFields.hidden = true;
     metaKeyDefModalOverride.textContent = "Remove from All Notes";
     metaKeyDefModalOverride.className = "btn-danger";
-    metaKeyDefModalDefOnly.textContent = "Remove meta only";
+    metaKeyDefModalDefOnly.textContent = "Remove Definition Only";
     metaKeyDefModalDefOnly.className = "btn-warning";
   }
 
@@ -1277,6 +1278,10 @@ function commitMetaKeyEdit(applyToNotes) {
   const newDefault = metaKeyDefModalDefault.value;
   if (!newKey) {
     closeMetaKeyDefModal();
+    return;
+  }
+  if (newKey !== originalKey && state.metaKeyDefs.some((d) => d.key === newKey)) {
+    metaKeyDefModalKey.select();
     return;
   }
   // Capture old default BEFORE updating definition
@@ -1650,11 +1655,11 @@ function importLevel(file) {
     if (data.bpm) bpmInput.value = data.bpm;
     if (data.lpb) lpbInput.value = clamp(Math.round(Number(data.lpb)), Number(lpbInput.min), Number(lpbInput.max));
     if (Number.isFinite(Number(data.offsetMs))) offsetInput.value = Math.round(Number(data.offsetMs));
-    if (Array.isArray(data.metaKeyDefs)) {
-      state.metaKeyDefs = data.metaKeyDefs
-        .filter((d) => d && typeof d.key === "string" && d.key.trim())
-        .map((d) => ({ key: d.key.trim(), defaultValue: typeof d.defaultValue === "string" ? d.defaultValue : "" }));
-    }
+    state.metaKeyDefs = Array.isArray(data.metaKeyDefs)
+      ? data.metaKeyDefs
+          .filter((d) => d && typeof d.key === "string" && d.key.trim())
+          .map((d) => ({ key: d.key.trim(), defaultValue: typeof d.defaultValue === "string" ? d.defaultValue : "" }))
+      : [];
     sortNotes();
     refreshUi();
   };
@@ -2076,6 +2081,11 @@ undoButton.addEventListener("click", () => {
     state.laneCount = previousState.laneCount || state.laneCount;
     state.selectedLane = previousState.selectedLane || 0;
     state.notes = (previousState.notes || []).map(normalizeNote);
+    state.metaKeyDefs = Array.isArray(previousState.metaKeyDefs)
+      ? previousState.metaKeyDefs
+          .filter((d) => d && typeof d.key === "string" && d.key.trim())
+          .map((d) => ({ key: d.key.trim(), defaultValue: typeof d.defaultValue === "string" ? d.defaultValue : "" }))
+      : [];
   }
   state.selectedNoteIds.clear();
   refreshUi();
