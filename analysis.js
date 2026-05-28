@@ -116,6 +116,9 @@ function createAnalysisRenderer({ state, getBpm, elements }) {
         events,
         windows: [],
         chordDistribution: [0, 0, 0, 0, 0],
+        laneDistribution: Array.from({ length: state.laneCount }, () => 0),
+        patternBreakdown: getPatternBreakdown([], []),
+        heatmap: getLaneHeatmap([]),
         metrics: { nps: 0, avgChordSize: 0, handAlternationRate: 0, burstDensity: 0, curveDifficulty: 0, maxChord: 0 },
       };
     }

@@ -90,6 +90,49 @@ button:hover:not(:disabled),
   color: var(--danger);
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal-card {
+  width: min(420px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  padding: 18px;
+}
+
+.modal-card h2 {
+  margin-bottom: 8px;
+}
+
+.modal-card p {
+  color: var(--muted);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.modal-actions button:first-child {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .app-shell {
   display: grid;
   gap: 14px;

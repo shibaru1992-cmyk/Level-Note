@@ -52,8 +52,14 @@ const laneCountInput = document.querySelector("#laneCount");
 const lpbInput = document.querySelector("#lpbInput");
 const contextMenu = document.querySelector("#contextMenu");
 const copyMenuItem = document.querySelector("#copyMenuItem");
-const pasteMenuItem = document.querySelector("#pasteMenuItem");
+const pasteWithLaneMenuItem = document.querySelector("#pasteWithLaneMenuItem");
+const pasteTimeOnlyMenuItem = document.querySelector("#pasteTimeOnlyMenuItem");
 const deleteMenuItem = document.querySelector("#deleteMenuItem");
+const pasteConflictModal = document.querySelector("#pasteConflictModal");
+const pasteConflictMessage = document.querySelector("#pasteConflictMessage");
+const replacePasteButton = document.querySelector("#replacePasteButton");
+const appendPasteButton = document.querySelector("#appendPasteButton");
+const cancelPasteButton = document.querySelector("#cancelPasteButton");
 const inspectorResizeHandle = document.querySelector("#inspectorResizeHandle");
 const canvas = document.querySelector("#timeline");
 const ctx = canvas.getContext("2d");
@@ -94,6 +100,7 @@ const state = {
   suppressNextPointerUp: false,
   copiedNotes: [],
   contextTarget: null,
+  pendingPaste: null,
   isResizingInspector: false,
   activeCurveId: null,
   curvePreviewPoint: null,
@@ -285,38 +292,88 @@ function deleteSelectedNotes() {
   refreshUi();
 }
 
-function pasteCopiedNotes(targetTime, targetLane) {
-  if (!state.copiedNotes.length || !state.duration) return;
+function getClipboardBaseLane(notes) {
+  const lanes = notes.flatMap((note) => (note.type === "curve" ? note.points.map((point) => point.lane) : [note.lane]));
+  return Math.min(...lanes);
+}
+
+function isNoteInLaneRange(note) {
+  if (note.type === "curve") {
+    return note.points.every((point) => point.lane >= 0 && point.lane < state.laneCount);
+  }
+  return note.lane >= 0 && note.lane < state.laneCount;
+}
+
+function preparePastedNotes(targetTime, targetLane, mode) {
   const baseTime = Math.min(...state.copiedNotes.map((note) => note.time));
-  const baseLane = Math.min(...state.copiedNotes.map((note) => note.lane));
-  const pasted = [];
+  const laneOffset = mode === "withLane" ? targetLane - getClipboardBaseLane(state.copiedNotes) : 0;
+  const candidates = [];
 
   state.copiedNotes.forEach((source) => {
     const note = normalizeNote({
       ...cloneNoteForClipboard(source),
       id: createNoteId(),
       time: Number(clamp(snapTime(targetTime + source.time - baseTime), 0, state.duration).toFixed(3)),
-      lane: clamp(targetLane + source.lane - baseLane, 0, state.laneCount - 1),
+      lane: source.lane + laneOffset,
     });
     if (note.type === "curve") {
       note.points = source.points.map((point) => ({
         time: Number(clamp(snapTime(targetTime + point.time - baseTime), 0, state.duration).toFixed(3)),
-        lane: clamp(targetLane + point.lane - baseLane, 0, state.laneCount - 1),
+        lane: point.lane + laneOffset,
       }));
       note.time = note.points[0].time;
       note.lane = note.points[0].lane;
     }
-    if (![...state.notes, ...pasted].some((existing) => notesOverlap(existing, note))) {
-      pasted.push(note);
-    }
+    if (isNoteInLaneRange(note) && !candidates.some((existing) => notesOverlap(existing, note))) candidates.push(note);
   });
 
+  return candidates;
+}
+
+function getPasteConflicts(notes) {
+  return state.notes.filter((existing) => notes.some((note) => notesOverlap(existing, note)));
+}
+
+function getPasteConflictCount(notes) {
+  return notes.filter((note) => state.notes.some((existing) => notesOverlap(existing, note))).length;
+}
+
+function commitPaste(notes, conflicts, mode) {
+  const pasted = mode === "append" ? notes.filter((note) => !conflicts.some((existing) => notesOverlap(existing, note))) : notes;
   if (!pasted.length) return;
   pushHistory();
+  if (mode === "replace") {
+    const conflictIds = new Set(conflicts.map((note) => note.id));
+    state.notes = state.notes.filter((note) => !conflictIds.has(note.id));
+    if (conflictIds.has(state.activeCurveId)) state.activeCurveId = null;
+  }
   state.notes.push(...pasted);
   state.selectedNoteIds = new Set(pasted.map((note) => note.id));
   sortNotes();
   refreshUi();
+}
+
+function showPasteConflictModal(notes, conflicts) {
+  state.pendingPaste = { notes, conflicts };
+  pasteConflictMessage.textContent = `${getPasteConflictCount(notes)} conflicting notes.`;
+  pasteConflictModal.hidden = false;
+}
+
+function hidePasteConflictModal() {
+  pasteConflictModal.hidden = true;
+  state.pendingPaste = null;
+}
+
+function pasteCopiedNotes(targetTime, targetLane, mode) {
+  if (!state.copiedNotes.length || !state.duration) return;
+  const candidates = preparePastedNotes(targetTime, targetLane, mode);
+  if (!candidates.length) return;
+  const conflicts = getPasteConflicts(candidates);
+  if (conflicts.length) {
+    showPasteConflictModal(candidates, conflicts);
+    return;
+  }
+  commitPaste(candidates, [], "append");
 }
 
 function hideContextMenu() {
@@ -327,7 +384,8 @@ function showContextMenu(clientX, clientY, targetTime, targetLane) {
   state.contextTarget = { time: targetTime, lane: targetLane };
   copyMenuItem.disabled = state.selectedNoteIds.size === 0;
   deleteMenuItem.disabled = state.selectedNoteIds.size === 0;
-  pasteMenuItem.disabled = state.copiedNotes.length === 0;
+  pasteWithLaneMenuItem.disabled = state.copiedNotes.length === 0;
+  pasteTimeOnlyMenuItem.disabled = state.copiedNotes.length === 0;
   contextMenu.hidden = false;
 
   const rect = contextMenu.getBoundingClientRect();
@@ -1626,13 +1684,24 @@ copyMenuItem.addEventListener("click", () => {
   hideContextMenu();
 });
 
-pasteMenuItem.addEventListener("click", () => {
-  if (pasteMenuItem.disabled) {
+pasteWithLaneMenuItem.addEventListener("click", () => {
+  if (pasteWithLaneMenuItem.disabled) {
     hideContextMenu();
     return;
   }
   if (state.contextTarget) {
-    pasteCopiedNotes(state.contextTarget.time, state.contextTarget.lane);
+    pasteCopiedNotes(state.contextTarget.time, state.contextTarget.lane, "withLane");
+  }
+  hideContextMenu();
+});
+
+pasteTimeOnlyMenuItem.addEventListener("click", () => {
+  if (pasteTimeOnlyMenuItem.disabled) {
+    hideContextMenu();
+    return;
+  }
+  if (state.contextTarget) {
+    pasteCopiedNotes(state.contextTarget.time, state.contextTarget.lane, "timeOnly");
   }
   hideContextMenu();
 });
@@ -1644,6 +1713,26 @@ deleteMenuItem.addEventListener("click", () => {
   }
   deleteSelectedNotes();
   hideContextMenu();
+});
+
+replacePasteButton.addEventListener("click", () => {
+  if (state.pendingPaste) {
+    commitPaste(state.pendingPaste.notes, state.pendingPaste.conflicts, "replace");
+  }
+  hidePasteConflictModal();
+});
+
+appendPasteButton.addEventListener("click", () => {
+  if (state.pendingPaste) {
+    commitPaste(state.pendingPaste.notes, state.pendingPaste.conflicts, "append");
+  }
+  hidePasteConflictModal();
+});
+
+cancelPasteButton.addEventListener("click", hidePasteConflictModal);
+
+pasteConflictModal.addEventListener("pointerdown", (event) => {
+  if (event.target === pasteConflictModal) hidePasteConflictModal();
 });
 
 contextMenu.addEventListener("pointerdown", (event) => {
@@ -1707,6 +1796,7 @@ window.addEventListener("keydown", (event) => {
   if (event.target.matches("input, select")) return;
   if (event.key === "Escape") {
     event.preventDefault();
+    hidePasteConflictModal();
     hideContextMenu();
     cancelEditPoint();
     cancelActiveHold();
