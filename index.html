@@ -39,6 +39,11 @@
           BPM
           <input id="bpmInput" type="number" min="40" max="300" step="1" value="120" />
         </label>
+        <div class="rate-group" role="group" aria-label="Playback rate">
+          <button data-rate="0.5" type="button">0.5×</button>
+          <button data-rate="0.75" type="button">0.75×</button>
+          <button data-rate="1" type="button" class="active">1×</button>
+        </div>
         <label class="toggle-control" title="Snap note vao line LPB">
           <input id="snapInput" type="checkbox" checked />
           Snap
@@ -134,7 +139,29 @@
           </div>
         </div>
         <div id="noteSettingPanel" class="inspector-body setting-panel" role="tabpanel" aria-labelledby="noteSettingTab" hidden>
-          <div class="empty-panel">Note Setting content will be added later.</div>
+          <div class="setting-section">
+            <p class="setting-section-title">Playback Audio</p>
+            <div class="setting-row">
+              <label class="toggle-control">
+                <input id="hitSoundInput" type="checkbox" />
+                Hit sound
+              </label>
+              <label class="numeric">
+                Vol
+                <input id="hitSoundVol" type="range" min="0" max="1" step="0.05" value="0.35" />
+              </label>
+            </div>
+            <div class="setting-row">
+              <label class="toggle-control">
+                <input id="metronomeInput" type="checkbox" />
+                Metronome
+              </label>
+              <label class="numeric">
+                Vol
+                <input id="metronomeVol" type="range" min="0" max="1" step="0.05" value="0.35" />
+              </label>
+            </div>
+          </div>
         </div>
         <div id="noteAnalysisPanel" class="inspector-body analysis-panel" role="tabpanel" aria-labelledby="noteAnalysisTab" hidden>
           <div class="analysis-dashboard">

@@ -62,6 +62,11 @@ const replacePasteButton = document.querySelector("#replacePasteButton");
 const appendPasteButton = document.querySelector("#appendPasteButton");
 const cancelPasteButton = document.querySelector("#cancelPasteButton");
 const inspectorResizeHandle = document.querySelector("#inspectorResizeHandle");
+const hitSoundInput = document.querySelector("#hitSoundInput");
+const hitSoundVol = document.querySelector("#hitSoundVol");
+const metronomeInput = document.querySelector("#metronomeInput");
+const metronomeVol = document.querySelector("#metronomeVol");
+const rateGroup = document.querySelector(".rate-group");
 const canvas = document.querySelector("#timeline");
 const ctx = canvas.getContext("2d");
 const minimap = document.querySelector("#minimap");
@@ -163,6 +168,105 @@ function getOffsetSeconds() {
 
 function getNoteSize() {
   return clamp(Number(noteSizeInput.value) || 9, Number(noteSizeInput.min), Number(noteSizeInput.max));
+}
+
+let sharedAc = null;
+function getSharedAc() {
+  const Cls = window.AudioContext || window.webkitAudioContext;
+  if (!Cls) return null;
+  if (!sharedAc || sharedAc.state === "closed") sharedAc = new Cls();
+  if (sharedAc.state === "suspended") sharedAc.resume();
+  return sharedAc;
+}
+
+let noiseBuffer = null;
+let noiseBufferAc = null;
+function getNoiseBuffer(ac) {
+  if (noiseBuffer && noiseBufferAc === ac) return noiseBuffer;
+  const size = Math.floor(ac.sampleRate * 0.05);
+  noiseBuffer = ac.createBuffer(1, size, ac.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
+  noiseBufferAc = ac;
+  return noiseBuffer;
+}
+
+function playHitSound(volume) {
+  const ac = getSharedAc();
+  if (!ac) return;
+  const now = ac.currentTime;
+
+  // Noise transient — "snap" click, 15ms
+  const noise = ac.createBufferSource();
+  noise.buffer = getNoiseBuffer(ac);
+  const filter = ac.createBiquadFilter();
+  filter.type = "bandpass";
+  filter.frequency.value = 2000;
+  filter.Q.value = 0.8;
+  const noiseGain = ac.createGain();
+  noiseGain.gain.setValueAtTime(volume * 0.35, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.015);
+  noise.connect(filter);
+  filter.connect(noiseGain);
+  noiseGain.connect(ac.destination);
+  noise.start(now);
+  noise.stop(now + 0.02);
+
+  // Sine body — ấm, 35ms
+  const osc = ac.createOscillator();
+  const oscGain = ac.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(800, now);
+  osc.frequency.exponentialRampToValueAtTime(400, now + 0.035);
+  oscGain.gain.setValueAtTime(volume * 0.2, now);
+  oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+  osc.connect(oscGain);
+  oscGain.connect(ac.destination);
+  osc.start(now);
+  osc.stop(now + 0.04);
+}
+
+function playMetronomeSound(isDownbeat, volume) {
+  const ac = getSharedAc();
+  if (!ac) return;
+  const osc = ac.createOscillator();
+  const gain = ac.createGain();
+  osc.type = "square";
+  osc.frequency.setValueAtTime(isDownbeat ? 1000 : 660, ac.currentTime);
+  gain.gain.setValueAtTime(volume * 0.1, ac.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.035);
+  osc.connect(gain);
+  gain.connect(ac.destination);
+  osc.start();
+  osc.stop(ac.currentTime + 0.035);
+}
+
+function tickHitSounds(from, to) {
+  if (!hitSoundInput.checked) return;
+  const vol = Number(hitSoundVol.value);
+  state.notes.forEach((note) => {
+    if (note.type === "curve") {
+      note.points.forEach((pt) => {
+        if (pt.time > from && pt.time <= to) playHitSound(vol);
+      });
+    } else {
+      if (note.time > from && note.time <= to) playHitSound(vol);
+    }
+  });
+}
+
+function tickMetronome(from, to) {
+  if (!metronomeInput.checked) return;
+  const bpm = Number(bpmInput.value);
+  if (!bpm) return;
+  const offset = getOffsetSeconds();
+  const beat = 60 / bpm;
+  const vol = Number(metronomeVol.value);
+  const prevBeat = Math.floor((from - offset) / beat);
+  const currBeat = Math.floor((to - offset) / beat);
+  for (let i = prevBeat + 1; i <= currBeat; i += 1) {
+    if (i >= 0) playMetronomeSound(i % 4 === 0, vol);
+  }
 }
 
 function playErrorSound() {
@@ -1276,9 +1380,17 @@ async function buildWaveform(file) {
   }
 }
 
+let lastTickTime = -1;
+
 function animationTick() {
-  currentTimeLabel.textContent = formatTime(audio.currentTime || 0);
-  scrub.value = audio.currentTime || 0;
+  const current = audio.currentTime || 0;
+  currentTimeLabel.textContent = formatTime(current);
+  scrub.value = current;
+  if (!audio.paused && lastTickTime >= 0 && current > lastTickTime) {
+    tickHitSounds(lastTickTime, current);
+    tickMetronome(lastTickTime, current);
+  }
+  lastTickTime = current;
   followPlayhead();
   draw();
   drawMinimap();
@@ -1789,6 +1901,13 @@ inspectorResizeHandle.addEventListener("pointercancel", () => {
 levelInput.addEventListener("change", () => {
   const file = levelInput.files[0];
   if (file) importLevel(file);
+});
+
+rateGroup.addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-rate]");
+  if (!btn) return;
+  audio.playbackRate = Number(btn.dataset.rate);
+  rateGroup.querySelectorAll("[data-rate]").forEach((b) => b.classList.toggle("active", b === btn));
 });
 
 exportButton.addEventListener("click", exportLevel);
