@@ -1,15 +1,17 @@
 function createAnalysisRenderer({ state, getBpm, elements }) {
   const chartColors = {
-    bg: "#17172f",
+    bg: "#181c20",
     grid: "rgba(255,255,255,0.08)",
-    text: "#94a3b8",
-    purple: "#a78bfa",
-    purpleFill: "rgba(124, 58, 237, 0.16)",
-    blue: "#6366f1",
-    teal: "#14b8a6",
-    yellow: "#fbbf24",
-    red: "#f87171",
-    green: "#34d399",
+    text: "#9aa6b2",
+    accent: "#45d39a",
+    accentFill: "rgba(69, 211, 154, 0.13)",
+    purple: "#b98cff",
+    purpleFill: "rgba(185, 140, 255, 0.13)",
+    blue: "#62a8ff",
+    teal: "#4dd5ff",
+    yellow: "#ffcc66",
+    red: "#ff6b6b",
+    green: "#45d39a",
   };
 
   function resizeCanvas(canvas, ctx) {
@@ -219,12 +221,12 @@ function createAnalysisRenderer({ state, getBpm, elements }) {
       else ctx.lineTo(x, y);
     });
     ctx.lineWidth = 2;
-    ctx.strokeStyle = chartColors.purple;
+    ctx.strokeStyle = chartColors.accent;
     ctx.stroke();
 
     const gradient = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom);
-    gradient.addColorStop(0, chartColors.purpleFill);
-    gradient.addColorStop(1, "rgba(124, 58, 237, 0)");
+    gradient.addColorStop(0, chartColors.accentFill);
+    gradient.addColorStop(1, "rgba(69, 211, 154, 0)");
     ctx.lineTo(width - padding.right, height - padding.bottom);
     ctx.lineTo(padding.left, height - padding.bottom);
     ctx.closePath();
@@ -248,7 +250,7 @@ function createAnalysisRenderer({ state, getBpm, elements }) {
     const plotWidth = width - padding.left - padding.right;
     const plotHeight = height - padding.top - padding.bottom;
     const maxValue = Math.max(1, ...analysis.chordDistribution);
-    const colors = [chartColors.blue, "#8b5cf6", chartColors.purple, chartColors.yellow, chartColors.red];
+    const colors = ["#45d39a", "#62a8ff", "#ffcc66", "#ff7ba7", "#b98cff"];
 
     ctx.strokeStyle = chartColors.grid;
     ctx.fillStyle = chartColors.text;
@@ -324,8 +326,8 @@ function createAnalysisRenderer({ state, getBpm, elements }) {
       else ctx.lineTo(x, y);
     });
     ctx.closePath();
-    ctx.fillStyle = "rgba(124, 58, 237, 0.28)";
-    ctx.strokeStyle = chartColors.purple;
+    ctx.fillStyle = "rgba(69, 211, 154, 0.18)";
+    ctx.strokeStyle = chartColors.accent;
     ctx.lineWidth = 2;
     ctx.fill();
     ctx.stroke();
@@ -339,7 +341,7 @@ function createAnalysisRenderer({ state, getBpm, elements }) {
     const plotWidth = width - padding.left - padding.right;
     const plotHeight = height - padding.top - padding.bottom;
     const maxValue = Math.max(1, ...analysis.laneDistribution);
-    const palette = [chartColors.blue, "#8b5cf6", chartColors.purple, "#b9a7f8", chartColors.teal, chartColors.yellow, chartColors.red];
+    const palette = ["#45d39a", "#62a8ff", "#ffcc66", "#ff7ba7", "#b98cff", "#4dd5ff", "#f28c5b", "#a7e05f", "#f071d5", "#78d8b0", "#d6ba5f", "#8aa4ff"];
 
     ctx.strokeStyle = chartColors.grid;
     ctx.fillStyle = chartColors.text;

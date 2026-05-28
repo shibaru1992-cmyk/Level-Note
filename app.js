@@ -357,12 +357,22 @@ function getNoteRange(note) {
   };
 }
 
+function getNoteHitPoints(note) {
+  if (note.type === "curve") return [];
+  if (note.type === "hold") {
+    return [
+      { time: note.time, lane: note.lane },
+      { time: note.time + (note.duration || 0), lane: note.lane },
+    ];
+  }
+  return [{ time: note.time, lane: note.lane }];
+}
+
 function notesOverlap(a, b) {
   if (a.type === "curve" || b.type === "curve") return false;
-  if (a.lane !== b.lane) return false;
-  const rangeA = getNoteRange(a);
-  const rangeB = getNoteRange(b);
-  return rangeA.start < rangeB.end && rangeB.start < rangeA.end;
+  return getNoteHitPoints(a).some((pointA) =>
+    getNoteHitPoints(b).some((pointB) => pointA.lane === pointB.lane && Math.abs(pointA.time - pointB.time) < tapMinGap)
+  );
 }
 
 function isValidHoldPoints(start, end) {
