@@ -1101,25 +1101,34 @@ function renderNoteCard(note) {
 }
 
 function renderNotesTable(notes) {
+  const lanes = getLanes();
   const rows = notes
-    .map(
-      (note) => `<tr>
-        <td>${formatTime(note.time)}</td>
-        <td>${escapeHtml(getNoteLaneDisplay(note))}</td>
-        <td><span class="note-type-badge note-type-${escapeHtml(note.type)}">${escapeHtml(note.type)}</span></td>
-        <td class="meta-chips-cell">${
-          note.meta.length
-            ? note.meta.map((m) => `<span class="meta-chip-small">${escapeHtml(m.key)}${m.value !== "" ? `:${escapeHtml(m.value)}` : ""}</span>`).join("")
-            : `<span style="color:var(--muted)">—</span>`
-        }</td>
-      </tr>`,
-    )
+    .map((note) => {
+      const lane = lanes[note.lane];
+      const color = escapeHtml(lane ? lane.color : "#9aa6b2");
+      const laneDisplay = escapeHtml(getNoteLaneDisplay(note));
+      const metaHtml = note.meta.length
+        ? note.meta
+            .map(
+              (m) =>
+                `<span class="meta-chip-small">${escapeHtml(m.key)}${m.value !== "" ? `:${escapeHtml(m.value)}` : ""}</span>`,
+            )
+            .join("")
+        : `<span class="note-list-no-meta">—</span>`;
+      return `<div class="note-list-row">
+        <span class="note-list-id">
+          <span class="note-lane-dot" style="background:${color}"></span>
+          <span class="note-time">${formatTime(note.time)}</span>
+        </span>
+        <span class="note-type-badge note-type-${escapeHtml(note.type)}">${escapeHtml(note.type)}</span>
+        <span class="note-list-lane">${laneDisplay}</span>
+        <span class="note-list-meta">${metaHtml}</span>
+        <button class="note-list-deselect" data-id="${escapeHtml(note.id)}" type="button" title="Bỏ chọn">×</button>
+      </div>`;
+    })
     .join("");
-  return `<div class="bulk-indicator">Áp dụng meta cho ${notes.length} notes</div>
-    <div class="table-scroll"><table>
-      <thead><tr><th>Time</th><th>Lane</th><th>Type</th><th>Meta</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>`;
+  return `<div class="bulk-indicator">${notes.length} notes · click × to deselect</div>
+    <div class="note-list">${rows}</div>`;
 }
 
 function renderMetaChips(selectedNotes) {
@@ -1270,18 +1279,33 @@ function commitMetaKeyEdit(applyToNotes) {
     closeMetaKeyDefModal();
     return;
   }
+  // Capture old default BEFORE updating definition
+  const oldDef = getMetaKeyDef(originalKey);
+  const oldDefault = oldDef ? oldDef.defaultValue : null;
   const defIndex = state.metaKeyDefs.findIndex((d) => d.key === originalKey);
   if (defIndex >= 0) {
     state.metaKeyDefs[defIndex] = { key: newKey, defaultValue: newDefault };
   }
-  if (applyToNotes && newKey !== originalKey) {
-    pushHistory();
-    state.notes.forEach((note) => {
-      note.meta.forEach((m) => {
-        if (m.key === originalKey) m.key = newKey;
+  if (applyToNotes) {
+    const keyChanged = newKey !== originalKey;
+    const defaultChanged = oldDefault !== null && newDefault !== oldDefault;
+    if (keyChanged || defaultChanged) {
+      pushHistory();
+      state.notes.forEach((note) => {
+        note.meta.forEach((m) => {
+          if (m.key === originalKey) {
+            // Update value if it was still using the old default
+            if (defaultChanged && m.value === oldDefault) m.value = newDefault;
+            // Rename key
+            if (keyChanged) m.key = newKey;
+          }
+        });
       });
-    });
-    refreshUi();
+      refreshUi();
+    } else {
+      renderMetaKeysList();
+      renderMetaKeySelect();
+    }
   } else {
     renderMetaKeysList();
     renderMetaKeySelect();
@@ -2081,6 +2105,15 @@ addMetaButton.addEventListener("click", () => {
     else note.meta.push({ key, value });
   });
   metaValueInput.value = "";
+  refreshUi();
+});
+
+inspectorContent.addEventListener("click", (event) => {
+  const deselBtn = event.target.closest(".note-list-deselect");
+  if (!deselBtn) return;
+  const id = deselBtn.dataset.id;
+  if (!id) return;
+  state.selectedNoteIds.delete(id);
   refreshUi();
 });
 

@@ -768,13 +768,83 @@ h2 {
   font-size: 12px;
 }
 
-/* Multi-select table */
+/* Multi-select note list */
 .bulk-indicator {
   padding: 0 0 6px;
   color: var(--muted);
   font-size: 12px;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 4px;
+  margin-bottom: 8px;
+}
+
+.note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.note-list-row {
+  display: grid;
+  grid-template-columns: auto auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+
+.note-list-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.note-list-lane {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-list-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.note-list-no-meta {
+  color: var(--muted);
+  font-size: 11px;
+  opacity: 0.5;
+}
+
+.note-list-deselect {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  min-height: auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.note-list-deselect:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.15);
+  border-color: transparent;
+  color: var(--danger);
 }
 
 /* Meta editor section (bottom of inspector) */
