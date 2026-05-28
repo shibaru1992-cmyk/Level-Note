@@ -1108,7 +1108,7 @@ function renderNotesTable(notes) {
         <span class="note-list-lane">${escapeHtml(laneDetail)}</span>
         <span class="note-list-meta">${metaHtml}</span>
         <span class="note-list-actions">
-          <button class="note-list-edit-meta" data-id="${escapeHtml(note.id)}" type="button" title="Edit meta"${note.meta.length === 0 ? " disabled" : ""}>Edit</button>
+          <button class="note-list-edit-meta" data-id="${escapeHtml(note.id)}" type="button" title="Edit meta">Edit</button>
           <button class="note-list-deselect" data-id="${escapeHtml(note.id)}" type="button" title="Bỏ chọn">×</button>
         </span>
       </div>`;
@@ -2313,11 +2313,19 @@ editMetaApply.addEventListener("click", () => {
   if (!note) { closeEditMetaModal(); return; }
   const rows = editMetaRows.querySelectorAll(".edit-meta-row");
   const newMeta = [];
+  const usedKeys = new Set();
   rows.forEach((row) => {
     const key = row.querySelector(".edit-meta-key-select")?.value;
     const value = row.querySelector(".edit-meta-value-input")?.value ?? "";
-    if (key) newMeta.push({ key, value });
+    if (!key) return;
+    if (usedKeys.has(key)) {
+      row.querySelector(".edit-meta-key-select")?.focus();
+      return;
+    }
+    usedKeys.add(key);
+    newMeta.push({ key, value });
   });
+  if (usedKeys.size !== newMeta.length || newMeta.length !== rows.length) return;
   pushHistory();
   note.meta = newMeta;
   refreshUi();
@@ -2452,7 +2460,6 @@ autoFollowInput.addEventListener("change", () => {
 
 window.addEventListener("resize", resizeCanvas);
 window.addEventListener("keydown", (event) => {
-  if (event.target.matches("input, select")) return;
   if (event.key === "Escape") {
     event.preventDefault();
     closeEditMetaModal();
@@ -2465,6 +2472,7 @@ window.addEventListener("keydown", (event) => {
     selectNotes([]);
     return;
   }
+  if (event.target.matches("input, select")) return;
   if (event.key === "Delete" || event.key === "Backspace") {
     if (state.selectedNoteIds.size) {
       event.preventDefault();
