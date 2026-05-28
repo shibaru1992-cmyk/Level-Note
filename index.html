@@ -116,26 +116,17 @@
         <div id="noteInspectorPanel" class="inspector-body" role="tabpanel" aria-labelledby="noteInspectorTab">
           <div class="selection-summary">
             <strong id="selectionCount">0 selected</strong>
-            <span id="selectionInfo">Click note de select, drag de select nhieu note</span>
+            <span id="selectionInfo">Click note để select, kéo để select nhiều</span>
           </div>
-          <div class="meta-editor">
-            <input id="metaKeyInput" type="text" placeholder="meta key" />
-            <input id="metaValueInput" type="text" placeholder="meta value" />
-            <button id="addMetaButton" type="button" disabled>Add meta</button>
-            <button id="removeMetaButton" type="button" disabled>Remove key</button>
-          </div>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Lane</th>
-                  <th>Type</th>
-                  <th>Meta</th>
-                </tr>
-              </thead>
-              <tbody id="selectedNotesBody"></tbody>
-            </table>
+          <div id="inspectorContent" class="inspector-content"></div>
+          <div id="metaEditorSection" class="meta-editor-section" hidden>
+            <div id="metaChips" class="meta-chips"></div>
+            <div class="meta-inputs">
+              <input id="metaKeyInput" type="text" placeholder="key" />
+              <input id="metaValueInput" type="text" placeholder="value" />
+              <button id="addMetaButton" type="button" disabled>+ Add</button>
+              <button id="removeMetaButton" type="button" disabled>Remove</button>
+            </div>
           </div>
         </div>
         <div id="noteSettingPanel" class="inspector-body setting-panel" role="tabpanel" aria-labelledby="noteSettingTab" hidden>

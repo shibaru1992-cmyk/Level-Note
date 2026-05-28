@@ -17,7 +17,6 @@ const durationTimeLabel = document.querySelector("#durationTime");
 const noteCount = document.querySelector("#noteCount");
 const selectionCount = document.querySelector("#selectionCount");
 const selectionInfo = document.querySelector("#selectionInfo");
-const selectedNotesBody = document.querySelector("#selectedNotesBody");
 const noteInspectorTab = document.querySelector("#noteInspectorTab");
 const noteSettingTab = document.querySelector("#noteSettingTab");
 const noteAnalysisTab = document.querySelector("#noteAnalysisTab");
@@ -48,6 +47,9 @@ const metaKeyInput = document.querySelector("#metaKeyInput");
 const metaValueInput = document.querySelector("#metaValueInput");
 const addMetaButton = document.querySelector("#addMetaButton");
 const removeMetaButton = document.querySelector("#removeMetaButton");
+const inspectorContent = document.querySelector("#inspectorContent");
+const metaEditorSection = document.querySelector("#metaEditorSection");
+const metaChipsEl = document.querySelector("#metaChips");
 const laneCountInput = document.querySelector("#laneCount");
 const lpbInput = document.querySelector("#lpbInput");
 const offsetInput = document.querySelector("#offsetInput");
@@ -1028,29 +1030,167 @@ function refreshUi() {
   draw();
 }
 
-function renderInspector() {
-  const selectedNotes = getSelectedNotes();
-  selectionCount.textContent = `${selectedNotes.length} selected`;
-  if (!selectedNotes.length) {
-    selectionInfo.textContent = "Click note de select, drag de select nhieu note";
-  } else if (selectedNotes.length === 1) {
-    const note = selectedNotes[0];
-    selectionInfo.textContent = `${formatTime(note.time)} | Lane ${getNoteLaneDisplay(note)} | ${note.type}`;
-  } else {
-    selectionInfo.textContent = `${selectedNotes.length} notes dang duoc select`;
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return char;
+    }
+  });
+}
+
+function renderNoteCard(note) {
+  const lanes = getLanes();
+  const lane = lanes[note.lane];
+  const color = escapeHtml(lane ? lane.color : "#9aa6b2");
+  const rows = [];
+  if (note.type === "hold") {
+    rows.push(`<div class="note-card-row">
+      <span class="note-card-label">End</span>
+      <span>${formatTime(note.time + note.duration)}</span>
+      <span class="note-card-muted">${Math.round(note.duration * 1000)}ms</span>
+    </div>`);
   }
-  addMetaButton.disabled = selectedNotes.length === 0;
-  removeMetaButton.disabled = selectedNotes.length === 0;
-  selectedNotesBody.innerHTML = selectedNotes
+  if (note.type === "curve") {
+    rows.push(`<div class="note-card-row">
+      <span class="note-card-label">Path</span>
+      <span>${escapeHtml(note.points.map((p) => `L${p.lane + 1}`).join(" → "))}</span>
+    </div>`);
+  } else {
+    rows.push(`<div class="note-card-row">
+      <span class="note-card-label">Lane</span>
+      <span>${escapeHtml(getNoteLaneDisplay(note))}</span>
+    </div>`);
+  }
+  return `<div class="note-card">
+    <div class="note-card-header">
+      <span class="note-lane-dot" style="background:${color}"></span>
+      <span class="note-time">${formatTime(note.time)}</span>
+      <span class="note-type-badge note-type-${escapeHtml(note.type)}">${escapeHtml(note.type)}</span>
+    </div>
+    ${rows.join("")}
+  </div>`;
+}
+
+function renderNotesTable(notes) {
+  const rows = notes
     .map(
       (note) => `<tr>
         <td>${formatTime(note.time)}</td>
-        <td>${getNoteLaneDisplay(note)}</td>
-        <td>${note.type}</td>
-        <td>${note.meta.map((item) => `${item.key}: ${item.value}`).join(", ") || "-"}</td>
+        <td>${escapeHtml(getNoteLaneDisplay(note))}</td>
+        <td><span class="note-type-badge note-type-${escapeHtml(note.type)}">${escapeHtml(note.type)}</span></td>
+        <td class="meta-chips-cell">${
+          note.meta.length
+            ? note.meta.map((m) => `<span class="meta-chip-small">${escapeHtml(m.key)}${m.value !== "" ? `:${escapeHtml(m.value)}` : ""}</span>`).join("")
+            : `<span style="color:var(--muted)">—</span>`
+        }</td>
       </tr>`,
     )
     .join("");
+  return `<div class="bulk-indicator">Áp dụng meta cho ${notes.length} notes</div>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Time</th><th>Lane</th><th>Type</th><th>Meta</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+function renderMetaChips(selectedNotes) {
+  if (selectedNotes.length > 1) {
+    const metaCounts = new Map();
+    selectedNotes.forEach((note) => {
+      note.meta.forEach((item) => {
+        metaCounts.set(item.key, (metaCounts.get(item.key) || 0) + 1);
+      });
+    });
+
+    if (!metaCounts.size) {
+      metaChipsEl.innerHTML = `<span class="meta-chips-empty">Chỉnh meta cho tất cả ${selectedNotes.length} notes</span>`;
+      return;
+    }
+
+    metaChipsEl.innerHTML = [...metaCounts.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(
+        ([key, count]) => `<span class="meta-chip">
+          <span class="meta-chip-key">${escapeHtml(key)}</span>
+          <span class="meta-chip-sep">·</span>
+          <span class="meta-chip-val">${count}/${selectedNotes.length}</span>
+          <button class="meta-chip-remove" data-key="${escapeHtml(key)}" type="button" title="Xóa key khỏi selection">×</button>
+        </span>`,
+      )
+      .join("");
+    return;
+  }
+
+  const { meta } = selectedNotes[0];
+  metaChipsEl.innerHTML = meta.length
+    ? meta
+        .map(
+          (item) => `<span class="meta-chip">
+            <span class="meta-chip-key">${escapeHtml(item.key)}</span>
+            ${item.value !== "" ? `<span class="meta-chip-sep">:</span><span class="meta-chip-val">${escapeHtml(item.value)}</span>` : ""}
+            <button class="meta-chip-remove" data-key="${escapeHtml(item.key)}" type="button" title="Xóa">×</button>
+          </span>`,
+        )
+        .join("")
+    : `<span class="meta-chips-empty">Chưa có meta</span>`;
+}
+
+function updateMetaButtons() {
+  const hasSelection = state.selectedNoteIds.size > 0;
+  const hasKey = metaKeyInput.value.trim() !== "";
+  addMetaButton.disabled = !hasSelection || !hasKey;
+  removeMetaButton.disabled = !hasSelection || !hasKey;
+}
+
+function removeMetaKeyFromSelection(key) {
+  if (!key || !state.selectedNoteIds.size) return;
+  pushHistory();
+  getSelectedNotes().forEach((note) => {
+    note.meta = note.meta.filter((item) => item.key !== key);
+  });
+  refreshUi();
+}
+
+function renderInspector() {
+  const selectedNotes = getSelectedNotes();
+  const count = selectedNotes.length;
+
+  selectionCount.textContent = `${count} selected`;
+  if (!count) {
+    selectionInfo.textContent = "Click note để select, kéo để select nhiều";
+  } else if (count === 1) {
+    selectionInfo.textContent = formatTime(selectedNotes[0].time);
+  } else {
+    selectionInfo.textContent = `${count} notes`;
+  }
+
+  if (!count) {
+    inspectorContent.innerHTML = `<div class="inspector-empty">
+      <span>Chưa có note nào được chọn</span>
+      <span>Click note · Kéo để chọn nhiều</span>
+    </div>`;
+  } else if (count === 1) {
+    inspectorContent.innerHTML = renderNoteCard(selectedNotes[0]);
+  } else {
+    inspectorContent.innerHTML = renderNotesTable(selectedNotes);
+  }
+
+  metaEditorSection.hidden = count === 0;
+  if (count > 0) {
+    renderMetaChips(selectedNotes);
+  }
+  updateMetaButtons();
 }
 
 function setInspectorTab(tab) {
@@ -1795,14 +1935,23 @@ addMetaButton.addEventListener("click", () => {
   refreshUi();
 });
 
+metaEditorSection.addEventListener("click", (event) => {
+  const removeBtn = event.target.closest(".meta-chip-remove");
+  if (!removeBtn || !state.selectedNoteIds.size) return;
+  removeMetaKeyFromSelection(removeBtn.dataset.key);
+});
+
 removeMetaButton.addEventListener("click", () => {
   const key = metaKeyInput.value.trim();
-  if (!key || !state.selectedNoteIds.size) return;
-  pushHistory();
-  getSelectedNotes().forEach((note) => {
-    note.meta = note.meta.filter((item) => item.key !== key);
-  });
-  refreshUi();
+  if (!key) return;
+  removeMetaKeyFromSelection(key);
+  metaKeyInput.value = "";
+  metaValueInput.value = "";
+  updateMetaButtons();
+});
+
+metaKeyInput.addEventListener("input", () => {
+  updateMetaButtons();
 });
 
 copyMenuItem.addEventListener("click", () => {
