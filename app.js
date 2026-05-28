@@ -50,6 +50,7 @@ const addMetaButton = document.querySelector("#addMetaButton");
 const removeMetaButton = document.querySelector("#removeMetaButton");
 const laneCountInput = document.querySelector("#laneCount");
 const lpbInput = document.querySelector("#lpbInput");
+const offsetInput = document.querySelector("#offsetInput");
 const contextMenu = document.querySelector("#contextMenu");
 const copyMenuItem = document.querySelector("#copyMenuItem");
 const pasteWithLaneMenuItem = document.querySelector("#pasteWithLaneMenuItem");
@@ -141,13 +142,23 @@ function clamp(value, min, max) {
 function snapTime(time) {
   const bpm = Number(bpmInput.value);
   const lpb = getLPB();
-  if (!snapInput.checked || !lpb || !bpm) return time;
+  const maxTime = state.duration || Number.POSITIVE_INFINITY;
+  if (!snapInput.checked || !lpb || !bpm) return clamp(time, 0, maxTime);
   const step = 60 / bpm / lpb;
-  return Math.round(time / step) * step;
+  const offset = getOffsetSeconds();
+  return clamp(offset + Math.round((time - offset) / step) * step, 0, maxTime);
 }
 
 function getLPB() {
   return clamp(Math.round(Number(lpbInput.value) || 4), Number(lpbInput.min), Number(lpbInput.max));
+}
+
+function getOffsetMs() {
+  return Math.max(0, Math.round(Number(offsetInput.value) || 0));
+}
+
+function getOffsetSeconds() {
+  return getOffsetMs() / 1000;
 }
 
 function getNoteSize() {
@@ -656,24 +667,29 @@ function drawBeatGrid(metrics) {
   const beat = 60 / bpm;
   const lpb = getLPB();
   const lineStep = beat / lpb;
-  ctx.strokeStyle = "#2d343c";
-  ctx.fillStyle = "#7d8995";
+  const offset = getOffsetSeconds();
   ctx.textAlign = "center";
-  const firstLine = Math.floor(state.viewStart / lineStep);
-  const lastLine = Math.ceil(state.viewEnd / lineStep);
+  const firstLine = Math.max(0, Math.floor((state.viewStart - offset) / lineStep));
+  const lastLine = Math.ceil((state.viewEnd - offset) / lineStep);
   for (let line = firstLine; line <= lastLine; line += 1) {
-    const time = line * lineStep;
+    const time = offset + line * lineStep;
+    if (time > state.duration) continue;
     const x = xFromTime(time, metrics);
+    const isFirstBeat = line === 0;
     const isBeat = line % lpb === 0;
     const isBar = isBeat && Math.round(line / lpb) % 4 === 0;
-    ctx.globalAlpha = isBar ? 0.9 : isBeat ? 0.55 : 0.22;
+    ctx.strokeStyle = isFirstBeat ? "#45d39a" : "#2d343c";
+    ctx.fillStyle = isFirstBeat ? "#45d39a" : "#7d8995";
+    ctx.globalAlpha = isFirstBeat ? 1 : isBar ? 0.9 : isBeat ? 0.55 : 0.22;
     ctx.beginPath();
     ctx.moveTo(x, metrics.padding.top);
     ctx.lineTo(x, metrics.height - metrics.padding.bottom);
     ctx.stroke();
-    if (isBar) ctx.fillText(formatTime(time).slice(0, 5), x, 14);
+    if (isFirstBeat) ctx.fillText("1:1", x, 14);
+    else if (isBar) ctx.fillText(formatTime(time).slice(0, 5), x, 14);
   }
   ctx.globalAlpha = 1;
+  ctx.strokeStyle = "#2d343c";
   ctx.textAlign = "left";
 }
 
@@ -1182,6 +1198,7 @@ function exportLevel() {
     song: state.songName || "untitled",
     bpm: Number(bpmInput.value),
     lpb: getLPB(),
+    offsetMs: getOffsetMs(),
     lanes: state.laneCount,
     duration: Number((state.duration || 0).toFixed(3)),
     notes: state.notes.map((note) => ({
@@ -1220,6 +1237,7 @@ function importLevel(file) {
     state.selectedNoteIds.clear();
     if (data.bpm) bpmInput.value = data.bpm;
     if (data.lpb) lpbInput.value = clamp(Math.round(Number(data.lpb)), Number(lpbInput.min), Number(lpbInput.max));
+    if (Number.isFinite(Number(data.offsetMs))) offsetInput.value = Math.round(Number(data.offsetMs));
     sortNotes();
     refreshUi();
   };
@@ -1779,6 +1797,11 @@ snapInput.addEventListener("change", draw);
 lpbInput.addEventListener("input", draw);
 lpbInput.addEventListener("change", () => {
   lpbInput.value = getLPB();
+  draw();
+});
+offsetInput.addEventListener("input", draw);
+offsetInput.addEventListener("change", () => {
+  offsetInput.value = getOffsetMs();
   draw();
 });
 noteSizeInput.addEventListener("input", draw);
