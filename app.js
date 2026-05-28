@@ -686,7 +686,7 @@ function drawBeatGrid(metrics) {
     ctx.lineTo(x, metrics.height - metrics.padding.bottom);
     ctx.stroke();
     if (isFirstBeat) ctx.fillText("1:1", x, 14);
-    else if (isBar) ctx.fillText(formatTime(time).slice(0, 5), x, 14);
+    else if (isBar) ctx.fillText(String(Math.round(line / (lpb * 4)) + 1), x, 14);
   }
   ctx.globalAlpha = 1;
   ctx.strokeStyle = "#2d343c";
