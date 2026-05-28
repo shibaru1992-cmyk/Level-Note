@@ -823,6 +823,34 @@ h2 {
   opacity: 0.5;
 }
 
+.note-list-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.note-list-edit-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  min-height: auto;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.note-list-edit-meta:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(69, 211, 154, 0.1);
+}
+
 .note-list-deselect {
   display: inline-flex;
   align-items: center;
@@ -984,6 +1012,112 @@ th {
   top: 0;
   background: var(--panel);
   color: var(--muted);
+}
+
+/* ── Edit Note Meta modal ────────────────────────────────────────────────── */
+
+.modal-card-meta {
+  width: min(500px, 100%);
+}
+
+.modal-note-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.edit-meta-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 6px;
+}
+
+.edit-meta-row {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr auto;
+  gap: 7px;
+  align-items: center;
+}
+
+.edit-meta-row select,
+.edit-meta-row input,
+.edit-meta-add-row select,
+.edit-meta-add-row input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0f1215;
+  color: var(--text);
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 13px;
+}
+
+.edit-meta-row select option,
+.edit-meta-add-row select option {
+  background: #181c20;
+}
+
+.edit-meta-remove-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  min-height: auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.edit-meta-remove-row:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.15);
+  color: var(--danger);
+  border-color: transparent;
+}
+
+.edit-meta-add-row {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr auto;
+  gap: 7px;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+
+.edit-meta-add-row button {
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+.meta-rows-empty {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.modal-actions .btn-accent {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(69, 211, 154, 0.1);
+}
+
+.modal-actions .btn-accent:hover:not(:disabled) {
+  background: rgba(69, 211, 154, 0.2);
 }
 
 /* ── Meta Key definition manager (Note Setting tab) ─────────────────────── */

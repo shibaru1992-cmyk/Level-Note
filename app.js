@@ -77,6 +77,14 @@ const metaKeyDefModalDefault = document.querySelector("#metaKeyDefModalDefault")
 const metaKeyDefModalOverride = document.querySelector("#metaKeyDefModalOverride");
 const metaKeyDefModalDefOnly = document.querySelector("#metaKeyDefModalDefOnly");
 const metaKeyDefModalCancel = document.querySelector("#metaKeyDefModalCancel");
+const editMetaModal = document.querySelector("#editMetaModal");
+const editMetaModalNote = document.querySelector("#editMetaModalNote");
+const editMetaRows = document.querySelector("#editMetaRows");
+const editMetaAddKey = document.querySelector("#editMetaAddKey");
+const editMetaAddValue = document.querySelector("#editMetaAddValue");
+const editMetaAddRowBtn = document.querySelector("#editMetaAddRowBtn");
+const editMetaApply = document.querySelector("#editMetaApply");
+const editMetaCancel = document.querySelector("#editMetaCancel");
 const hitSoundInput = document.querySelector("#hitSoundInput");
 const hitSoundVol = document.querySelector("#hitSoundVol");
 const metronomeInput = document.querySelector("#metronomeInput");
@@ -134,6 +142,7 @@ const state = {
   metaKeyDefs: [],
   metaKeyModalMode: null,
   metaKeyModalOriginalKey: null,
+  editMetaNoteId: null,
 };
 
 const renderAnalysis = createAnalysisRenderer({
@@ -1068,46 +1077,20 @@ function escapeHtml(value) {
   });
 }
 
-function renderNoteCard(note) {
-  const lanes = getLanes();
-  const lane = lanes[note.lane];
-  const color = escapeHtml(lane ? lane.color : "#9aa6b2");
-  const rows = [];
-  if (note.type === "hold") {
-    rows.push(`<div class="note-card-row">
-      <span class="note-card-label">End</span>
-      <span>${formatTime(note.time + note.duration)}</span>
-      <span class="note-card-muted">${Math.round(note.duration * 1000)}ms</span>
-    </div>`);
-  }
-  if (note.type === "curve") {
-    rows.push(`<div class="note-card-row">
-      <span class="note-card-label">Path</span>
-      <span>${escapeHtml(note.points.map((p) => `L${p.lane + 1}`).join(" → "))}</span>
-    </div>`);
-  } else {
-    rows.push(`<div class="note-card-row">
-      <span class="note-card-label">Lane</span>
-      <span>${escapeHtml(getNoteLaneDisplay(note))}</span>
-    </div>`);
-  }
-  return `<div class="note-card">
-    <div class="note-card-header">
-      <span class="note-lane-dot" style="background:${color}"></span>
-      <span class="note-time">${formatTime(note.time)}</span>
-      <span class="note-type-badge note-type-${escapeHtml(note.type)}">${escapeHtml(note.type)}</span>
-    </div>
-    ${rows.join("")}
-  </div>`;
-}
-
 function renderNotesTable(notes) {
   const lanes = getLanes();
   const rows = notes
     .map((note) => {
       const lane = lanes[note.lane];
       const color = escapeHtml(lane ? lane.color : "#9aa6b2");
-      const laneDisplay = escapeHtml(getNoteLaneDisplay(note));
+      let laneDetail;
+      if (note.type === "hold") {
+        laneDetail = `Lane ${note.lane + 1} · ${Math.round(note.duration * 1000)}ms`;
+      } else if (note.type === "curve") {
+        laneDetail = note.points.map((p) => `L${p.lane + 1}`).join(" → ");
+      } else {
+        laneDetail = `Lane ${note.lane + 1}`;
+      }
       const metaHtml = note.meta.length
         ? note.meta
             .map(
@@ -1122,14 +1105,18 @@ function renderNotesTable(notes) {
           <span class="note-time">${formatTime(note.time)}</span>
         </span>
         <span class="note-type-badge note-type-${escapeHtml(note.type)}">${escapeHtml(note.type)}</span>
-        <span class="note-list-lane">${laneDisplay}</span>
+        <span class="note-list-lane">${escapeHtml(laneDetail)}</span>
         <span class="note-list-meta">${metaHtml}</span>
-        <button class="note-list-deselect" data-id="${escapeHtml(note.id)}" type="button" title="Bỏ chọn">×</button>
+        <span class="note-list-actions">
+          <button class="note-list-edit-meta" data-id="${escapeHtml(note.id)}" type="button" title="Edit meta"${note.meta.length === 0 ? " disabled" : ""}>Edit</button>
+          <button class="note-list-deselect" data-id="${escapeHtml(note.id)}" type="button" title="Bỏ chọn">×</button>
+        </span>
       </div>`;
     })
     .join("");
-  return `<div class="bulk-indicator">${notes.length} notes · click × to deselect</div>
-    <div class="note-list">${rows}</div>`;
+  const header =
+    notes.length > 1 ? `<div class="bulk-indicator">${notes.length} notes · click × to deselect</div>` : "";
+  return `${header}<div class="note-list">${rows}</div>`;
 }
 
 function renderMetaChips(selectedNotes) {
@@ -1272,6 +1259,79 @@ function closeMetaKeyDefModal() {
   state.metaKeyModalOriginalKey = null;
 }
 
+// ── Edit Note Meta modal ──────────────────────────────────────────────────
+
+function buildEditMetaKeySelectHtml(selectedKey) {
+  const defs = state.metaKeyDefs;
+  const inDefs = defs.some((d) => d.key === selectedKey);
+  let options = defs
+    .map(
+      (d) =>
+        `<option value="${escapeHtml(d.key)}"${d.key === selectedKey ? " selected" : ""}>${escapeHtml(d.key)}</option>`,
+    )
+    .join("");
+  if (!inDefs && selectedKey) {
+    options = `<option value="${escapeHtml(selectedKey)}" selected>${escapeHtml(selectedKey)}</option>` + options;
+  }
+  return `<select class="edit-meta-key-select">${options}</select>`;
+}
+
+function renderEditMetaRows() {
+  const note = state.notes.find((n) => n.id === state.editMetaNoteId);
+  if (!note || !note.meta.length) {
+    editMetaRows.innerHTML = `<span class="meta-rows-empty">No meta — use Add below</span>`;
+    return;
+  }
+  editMetaRows.innerHTML = note.meta
+    .map(
+      (entry) => `<div class="edit-meta-row">
+        ${buildEditMetaKeySelectHtml(entry.key)}
+        <input class="edit-meta-value-input" type="text" value="${escapeHtml(entry.value)}" />
+        <button class="edit-meta-remove-row" type="button" title="Remove">×</button>
+      </div>`,
+    )
+    .join("");
+}
+
+function openEditMetaModal(noteId) {
+  const note = state.notes.find((n) => n.id === noteId);
+  if (!note) return;
+  state.editMetaNoteId = noteId;
+
+  const lanes = getLanes();
+  const lane = lanes[note.lane];
+  const color = lane ? lane.color : "#9aa6b2";
+  let laneDetail;
+  if (note.type === "hold") {
+    laneDetail = `Lane ${note.lane + 1} · ${Math.round(note.duration * 1000)}ms`;
+  } else if (note.type === "curve") {
+    laneDetail = note.points.map((p) => `L${p.lane + 1}`).join(" → ");
+  } else {
+    laneDetail = `Lane ${note.lane + 1}`;
+  }
+  editMetaModalNote.innerHTML = `
+    <span class="note-lane-dot" style="background:${escapeHtml(color)}"></span>
+    <span class="note-time">${formatTime(note.time)}</span>
+    <span class="note-type-badge note-type-${escapeHtml(note.type)}">${escapeHtml(note.type)}</span>
+    <span style="color:var(--muted);font-size:12px">${escapeHtml(laneDetail)}</span>
+  `;
+
+  editMetaAddKey.innerHTML = state.metaKeyDefs.length
+    ? `<option value="">— select key —</option>` +
+      state.metaKeyDefs.map((d) => `<option value="${escapeHtml(d.key)}">${escapeHtml(d.key)}</option>`).join("")
+    : `<option value="">— no keys defined —</option>`;
+  editMetaAddValue.value = "";
+  editMetaAddValue.placeholder = "value";
+
+  renderEditMetaRows();
+  editMetaModal.hidden = false;
+}
+
+function closeEditMetaModal() {
+  editMetaModal.hidden = true;
+  state.editMetaNoteId = null;
+}
+
 function commitMetaKeyEdit(applyToNotes) {
   const originalKey = state.metaKeyModalOriginalKey;
   const newKey = metaKeyDefModalKey.value.trim();
@@ -1352,8 +1412,6 @@ function renderInspector() {
       <span>Chưa có note nào được chọn</span>
       <span>Click note · Kéo để chọn nhiều</span>
     </div>`;
-  } else if (count === 1) {
-    inspectorContent.innerHTML = renderNoteCard(selectedNotes[0]);
   } else {
     inspectorContent.innerHTML = renderNotesTable(selectedNotes);
   }
@@ -2120,11 +2178,16 @@ addMetaButton.addEventListener("click", () => {
 
 inspectorContent.addEventListener("click", (event) => {
   const deselBtn = event.target.closest(".note-list-deselect");
-  if (!deselBtn) return;
-  const id = deselBtn.dataset.id;
-  if (!id) return;
-  state.selectedNoteIds.delete(id);
-  refreshUi();
+  if (deselBtn) {
+    const id = deselBtn.dataset.id;
+    if (id) { state.selectedNoteIds.delete(id); refreshUi(); }
+    return;
+  }
+  const editBtn = event.target.closest(".note-list-edit-meta");
+  if (editBtn && !editBtn.disabled) {
+    const id = editBtn.dataset.id;
+    if (id) openEditMetaModal(id);
+  }
 });
 
 metaEditorSection.addEventListener("click", (event) => {
@@ -2202,6 +2265,70 @@ appendPasteButton.addEventListener("click", () => {
 });
 
 cancelPasteButton.addEventListener("click", hidePasteConflictModal);
+
+// Edit Note Meta modal
+editMetaRows.addEventListener("click", (event) => {
+  const removeBtn = event.target.closest(".edit-meta-remove-row");
+  if (!removeBtn) return;
+  const row = removeBtn.closest(".edit-meta-row");
+  if (row) {
+    row.remove();
+    if (!editMetaRows.querySelectorAll(".edit-meta-row").length) {
+      editMetaRows.innerHTML = `<span class="meta-rows-empty">No meta — use Add below</span>`;
+    }
+  }
+});
+
+editMetaAddRowBtn.addEventListener("click", () => {
+  const key = editMetaAddKey.value;
+  if (!key) return;
+  const def = getMetaKeyDef(key);
+  const value = editMetaAddValue.value !== "" ? editMetaAddValue.value : (def ? def.defaultValue : "");
+  // Focus existing row if duplicate key
+  for (const row of editMetaRows.querySelectorAll(".edit-meta-row")) {
+    if (row.querySelector(".edit-meta-key-select")?.value === key) {
+      row.querySelector(".edit-meta-value-input")?.focus();
+      return;
+    }
+  }
+  const empty = editMetaRows.querySelector(".meta-rows-empty");
+  if (empty) empty.remove();
+  const newRow = document.createElement("div");
+  newRow.className = "edit-meta-row";
+  newRow.innerHTML = `${buildEditMetaKeySelectHtml(key)}<input class="edit-meta-value-input" type="text" value="${escapeHtml(value)}" /><button class="edit-meta-remove-row" type="button" title="Remove">×</button>`;
+  editMetaRows.appendChild(newRow);
+  editMetaAddKey.value = "";
+  editMetaAddValue.value = "";
+  editMetaAddValue.placeholder = "value";
+  newRow.querySelector(".edit-meta-value-input")?.focus();
+});
+
+editMetaAddKey.addEventListener("change", () => {
+  const def = getMetaKeyDef(editMetaAddKey.value);
+  editMetaAddValue.placeholder = def && def.defaultValue ? def.defaultValue : "value";
+});
+
+editMetaApply.addEventListener("click", () => {
+  const note = state.notes.find((n) => n.id === state.editMetaNoteId);
+  if (!note) { closeEditMetaModal(); return; }
+  const rows = editMetaRows.querySelectorAll(".edit-meta-row");
+  const newMeta = [];
+  rows.forEach((row) => {
+    const key = row.querySelector(".edit-meta-key-select")?.value;
+    const value = row.querySelector(".edit-meta-value-input")?.value ?? "";
+    if (key) newMeta.push({ key, value });
+  });
+  pushHistory();
+  note.meta = newMeta;
+  refreshUi();
+  closeEditMetaModal();
+});
+
+editMetaCancel.addEventListener("click", closeEditMetaModal);
+
+editMetaModal.addEventListener("pointerdown", (event) => {
+  if (event.target === editMetaModal) closeEditMetaModal();
+});
 
 // Meta key definition modal
 metaKeyDefModalOverride.addEventListener("click", () => {
@@ -2328,6 +2455,7 @@ window.addEventListener("keydown", (event) => {
   if (event.target.matches("input, select")) return;
   if (event.key === "Escape") {
     event.preventDefault();
+    closeEditMetaModal();
     closeMetaKeyDefModal();
     hidePasteConflictModal();
     hideContextMenu();
