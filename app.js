@@ -64,6 +64,19 @@ const replacePasteButton = document.querySelector("#replacePasteButton");
 const appendPasteButton = document.querySelector("#appendPasteButton");
 const cancelPasteButton = document.querySelector("#cancelPasteButton");
 const inspectorResizeHandle = document.querySelector("#inspectorResizeHandle");
+const metaKeysList = document.querySelector("#metaKeysList");
+const metaKeyAddKey = document.querySelector("#metaKeyAddKey");
+const metaKeyAddDefault = document.querySelector("#metaKeyAddDefault");
+const metaKeyAddSubmit = document.querySelector("#metaKeyAddSubmit");
+const metaKeyDefModal = document.querySelector("#metaKeyDefModal");
+const metaKeyDefModalTitle = document.querySelector("#metaKeyDefModalTitle");
+const metaKeyDefModalUsage = document.querySelector("#metaKeyDefModalUsage");
+const metaKeyDefFields = document.querySelector("#metaKeyDefFields");
+const metaKeyDefModalKey = document.querySelector("#metaKeyDefModalKey");
+const metaKeyDefModalDefault = document.querySelector("#metaKeyDefModalDefault");
+const metaKeyDefModalOverride = document.querySelector("#metaKeyDefModalOverride");
+const metaKeyDefModalDefOnly = document.querySelector("#metaKeyDefModalDefOnly");
+const metaKeyDefModalCancel = document.querySelector("#metaKeyDefModalCancel");
 const hitSoundInput = document.querySelector("#hitSoundInput");
 const hitSoundVol = document.querySelector("#hitSoundVol");
 const metronomeInput = document.querySelector("#metronomeInput");
@@ -118,6 +131,9 @@ const state = {
   nextNoteId: 1,
   autoFollow: true,
   activeInspectorTab: "inspector",
+  metaKeyDefs: [],
+  metaKeyModalMode: null,
+  metaKeyModalOriginalKey: null,
 };
 
 const renderAnalysis = createAnalysisRenderer({
@@ -1025,6 +1041,8 @@ function refreshUi() {
   clearButton.disabled = state.notes.length === 0;
   undoButton.disabled = state.history.length === 0;
   laneCountInput.value = state.laneCount;
+  renderMetaKeysList();
+  renderMetaKeySelect();
   renderInspector();
   renderAnalysis();
   draw();
@@ -1148,7 +1166,7 @@ function renderMetaChips(selectedNotes) {
 
 function updateMetaButtons() {
   const hasSelection = state.selectedNoteIds.size > 0;
-  const hasKey = metaKeyInput.value.trim() !== "";
+  const hasKey = metaKeyInput.value !== "";
   addMetaButton.disabled = !hasSelection || !hasKey;
   removeMetaButton.disabled = !hasSelection || !hasKey;
 }
@@ -1160,6 +1178,131 @@ function removeMetaKeyFromSelection(key) {
     note.meta = note.meta.filter((item) => item.key !== key);
   });
   refreshUi();
+}
+
+// ── Meta Key Definitions ─────────────────────────────────────────────────
+
+function getMetaKeyDef(key) {
+  return state.metaKeyDefs.find((d) => d.key === key) || null;
+}
+
+function getMetaKeyUsageCount(key) {
+  return state.notes.filter((note) => note.meta.some((m) => m.key === key)).length;
+}
+
+function renderMetaKeysList() {
+  if (!state.metaKeyDefs.length) {
+    metaKeysList.innerHTML = `<span class="meta-keys-empty">No meta keys defined</span>`;
+    return;
+  }
+  metaKeysList.innerHTML = state.metaKeyDefs
+    .map(
+      (def) => `<div class="meta-key-row">
+        <span class="meta-key-name">${escapeHtml(def.key)}</span>
+        <span class="meta-key-default">${
+          def.defaultValue !== ""
+            ? escapeHtml(def.defaultValue)
+            : `<span class="meta-key-no-default">(empty)</span>`
+        }</span>
+        <button class="meta-key-action-btn meta-key-edit-btn" data-key="${escapeHtml(def.key)}" type="button" title="Edit">Edit</button>
+        <button class="meta-key-action-btn meta-key-delete-btn" data-key="${escapeHtml(def.key)}" type="button" title="Delete">✕</button>
+      </div>`,
+    )
+    .join("");
+}
+
+function renderMetaKeySelect() {
+  const currentVal = metaKeyInput.value;
+  if (!state.metaKeyDefs.length) {
+    metaKeyInput.innerHTML = `<option value="">— no keys defined —</option>`;
+  } else {
+    metaKeyInput.innerHTML = state.metaKeyDefs
+      .map((d) => `<option value="${escapeHtml(d.key)}">${escapeHtml(d.key)}</option>`)
+      .join("");
+    if (currentVal && state.metaKeyDefs.some((d) => d.key === currentVal)) {
+      metaKeyInput.value = currentVal;
+    }
+  }
+  const def = getMetaKeyDef(metaKeyInput.value);
+  metaValueInput.placeholder = def && def.defaultValue ? def.defaultValue : "value";
+  updateMetaButtons();
+}
+
+function openMetaKeyDefModal(mode, key) {
+  const def = getMetaKeyDef(key);
+  const count = getMetaKeyUsageCount(key);
+  state.metaKeyModalMode = mode;
+  state.metaKeyModalOriginalKey = key;
+
+  metaKeyDefModalTitle.textContent = mode === "edit" ? "Edit Meta Key" : "Delete Meta Key";
+  metaKeyDefModalUsage.textContent = `${count} note${count !== 1 ? "s" : ""} currently use this key`;
+
+  if (mode === "edit") {
+    metaKeyDefFields.hidden = false;
+    metaKeyDefModalKey.value = def ? def.key : key;
+    metaKeyDefModalDefault.value = def ? def.defaultValue : "";
+    metaKeyDefModalOverride.textContent = "Override All Notes";
+    metaKeyDefModalOverride.className = "btn-warning";
+    metaKeyDefModalDefOnly.textContent = "Update Definition Only";
+    metaKeyDefModalDefOnly.className = "";
+  } else {
+    metaKeyDefFields.hidden = true;
+    metaKeyDefModalOverride.textContent = "Remove from All Notes";
+    metaKeyDefModalOverride.className = "btn-danger";
+    metaKeyDefModalDefOnly.textContent = "Remove meta only";
+    metaKeyDefModalDefOnly.className = "btn-warning";
+  }
+
+  metaKeyDefModal.hidden = false;
+}
+
+function closeMetaKeyDefModal() {
+  metaKeyDefModal.hidden = true;
+  state.metaKeyModalMode = null;
+  state.metaKeyModalOriginalKey = null;
+}
+
+function commitMetaKeyEdit(applyToNotes) {
+  const originalKey = state.metaKeyModalOriginalKey;
+  const newKey = metaKeyDefModalKey.value.trim();
+  const newDefault = metaKeyDefModalDefault.value;
+  if (!newKey) {
+    closeMetaKeyDefModal();
+    return;
+  }
+  const defIndex = state.metaKeyDefs.findIndex((d) => d.key === originalKey);
+  if (defIndex >= 0) {
+    state.metaKeyDefs[defIndex] = { key: newKey, defaultValue: newDefault };
+  }
+  if (applyToNotes && newKey !== originalKey) {
+    pushHistory();
+    state.notes.forEach((note) => {
+      note.meta.forEach((m) => {
+        if (m.key === originalKey) m.key = newKey;
+      });
+    });
+    refreshUi();
+  } else {
+    renderMetaKeysList();
+    renderMetaKeySelect();
+  }
+  closeMetaKeyDefModal();
+}
+
+function commitMetaKeyDelete(applyToNotes) {
+  const key = state.metaKeyModalOriginalKey;
+  state.metaKeyDefs = state.metaKeyDefs.filter((d) => d.key !== key);
+  if (applyToNotes) {
+    pushHistory();
+    state.notes.forEach((note) => {
+      note.meta = note.meta.filter((m) => m.key !== key);
+    });
+    refreshUi();
+  } else {
+    renderMetaKeysList();
+    renderMetaKeySelect();
+  }
+  closeMetaKeyDefModal();
 }
 
 function renderInspector() {
@@ -1445,6 +1588,7 @@ function exportLevel() {
     offsetMs: getOffsetMs(),
     lanes: state.laneCount,
     duration: Number((state.duration || 0).toFixed(3)),
+    metaKeyDefs: state.metaKeyDefs.map((d) => ({ key: d.key, defaultValue: d.defaultValue })),
     notes: state.notes.map((note) => ({
       id: note.id,
       time: note.time,
@@ -1482,6 +1626,11 @@ function importLevel(file) {
     if (data.bpm) bpmInput.value = data.bpm;
     if (data.lpb) lpbInput.value = clamp(Math.round(Number(data.lpb)), Number(lpbInput.min), Number(lpbInput.max));
     if (Number.isFinite(Number(data.offsetMs))) offsetInput.value = Math.round(Number(data.offsetMs));
+    if (Array.isArray(data.metaKeyDefs)) {
+      state.metaKeyDefs = data.metaKeyDefs
+        .filter((d) => d && typeof d.key === "string" && d.key.trim())
+        .map((d) => ({ key: d.key.trim(), defaultValue: typeof d.defaultValue === "string" ? d.defaultValue : "" }));
+    }
     sortNotes();
     refreshUi();
   };
@@ -1921,16 +2070,16 @@ noteSettingTab.addEventListener("click", () => setInspectorTab("setting"));
 noteAnalysisTab.addEventListener("click", () => setInspectorTab("analysis"));
 
 addMetaButton.addEventListener("click", () => {
-  const key = metaKeyInput.value.trim();
+  const key = metaKeyInput.value;
   if (!key || !state.selectedNoteIds.size) return;
   pushHistory();
-  const value = metaValueInput.value;
+  const def = getMetaKeyDef(key);
+  const value = metaValueInput.value !== "" ? metaValueInput.value : (def ? def.defaultValue : "");
   getSelectedNotes().forEach((note) => {
     const existing = note.meta.find((item) => item.key === key);
     if (existing) existing.value = value;
     else note.meta.push({ key, value });
   });
-  metaKeyInput.value = "";
   metaValueInput.value = "";
   refreshUi();
 });
@@ -1942,15 +2091,16 @@ metaEditorSection.addEventListener("click", (event) => {
 });
 
 removeMetaButton.addEventListener("click", () => {
-  const key = metaKeyInput.value.trim();
+  const key = metaKeyInput.value;
   if (!key) return;
   removeMetaKeyFromSelection(key);
-  metaKeyInput.value = "";
   metaValueInput.value = "";
   updateMetaButtons();
 });
 
-metaKeyInput.addEventListener("input", () => {
+metaKeyInput.addEventListener("change", () => {
+  const def = getMetaKeyDef(metaKeyInput.value);
+  metaValueInput.placeholder = def && def.defaultValue ? def.defaultValue : "value";
   updateMetaButtons();
 });
 
@@ -2009,6 +2159,54 @@ appendPasteButton.addEventListener("click", () => {
 });
 
 cancelPasteButton.addEventListener("click", hidePasteConflictModal);
+
+// Meta key definition modal
+metaKeyDefModalOverride.addEventListener("click", () => {
+  if (state.metaKeyModalMode === "edit") commitMetaKeyEdit(true);
+  else if (state.metaKeyModalMode === "delete") commitMetaKeyDelete(true);
+});
+
+metaKeyDefModalDefOnly.addEventListener("click", () => {
+  if (state.metaKeyModalMode === "edit") commitMetaKeyEdit(false);
+  else if (state.metaKeyModalMode === "delete") commitMetaKeyDelete(false);
+});
+
+metaKeyDefModalCancel.addEventListener("click", closeMetaKeyDefModal);
+
+metaKeyDefModal.addEventListener("pointerdown", (event) => {
+  if (event.target === metaKeyDefModal) closeMetaKeyDefModal();
+});
+
+// Meta key list (edit/delete buttons via delegation)
+metaKeysList.addEventListener("click", (event) => {
+  const editBtn = event.target.closest(".meta-key-edit-btn");
+  const deleteBtn = event.target.closest(".meta-key-delete-btn");
+  if (editBtn) openMetaKeyDefModal("edit", editBtn.dataset.key);
+  else if (deleteBtn) openMetaKeyDefModal("delete", deleteBtn.dataset.key);
+});
+
+// Add key definition (inline form)
+metaKeyAddSubmit.addEventListener("click", () => {
+  const key = metaKeyAddKey.value.trim();
+  if (!key) return;
+  if (state.metaKeyDefs.some((d) => d.key === key)) {
+    metaKeyAddKey.select();
+    return;
+  }
+  state.metaKeyDefs.push({ key, defaultValue: metaKeyAddDefault.value });
+  metaKeyAddKey.value = "";
+  metaKeyAddDefault.value = "";
+  renderMetaKeysList();
+  renderMetaKeySelect();
+});
+
+metaKeyAddKey.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") metaKeyAddSubmit.click();
+});
+
+metaKeyAddDefault.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") metaKeyAddSubmit.click();
+});
 
 pasteConflictModal.addEventListener("pointerdown", (event) => {
   if (event.target === pasteConflictModal) hidePasteConflictModal();
@@ -2087,6 +2285,7 @@ window.addEventListener("keydown", (event) => {
   if (event.target.matches("input, select")) return;
   if (event.key === "Escape") {
     event.preventDefault();
+    closeMetaKeyDefModal();
     hidePasteConflictModal();
     hideContextMenu();
     cancelEditPoint();
@@ -2121,5 +2320,7 @@ window.addEventListener("keydown", (event) => {
 });
 
 setAudioEnabled(false);
+renderMetaKeysList();
+renderMetaKeySelect();
 resizeCanvas();
 requestAnimationFrame(animationTick);

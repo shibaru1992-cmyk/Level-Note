@@ -122,7 +122,7 @@
           <div id="metaEditorSection" class="meta-editor-section" hidden>
             <div id="metaChips" class="meta-chips"></div>
             <div class="meta-inputs">
-              <input id="metaKeyInput" type="text" placeholder="key" />
+              <select id="metaKeyInput"></select>
               <input id="metaValueInput" type="text" placeholder="value" />
               <button id="addMetaButton" type="button" disabled>+ Add</button>
               <button id="removeMetaButton" type="button" disabled>Remove</button>
@@ -151,6 +151,17 @@
                 Vol
                 <input id="metronomeVol" type="range" min="0" max="1" step="0.05" value="0.35" />
               </label>
+            </div>
+          </div>
+          <div class="setting-section">
+            <p class="setting-section-title">Meta Keys</p>
+            <div class="meta-key-add-row">
+              <input id="metaKeyAddKey" type="text" placeholder="key name" />
+              <input id="metaKeyAddDefault" type="text" placeholder="default value" />
+              <button id="metaKeyAddSubmit" type="button">+ Add</button>
+            </div>
+            <div id="metaKeysList" class="meta-keys-list">
+              <span class="meta-keys-empty">No meta keys defined</span>
             </div>
           </div>
         </div>
@@ -244,9 +255,31 @@
         <h2 id="pasteConflictTitle">Paste conflict</h2>
         <p id="pasteConflictMessage">0 conflicting notes.</p>
         <div class="modal-actions">
-          <button id="replacePasteButton" type="button">Replace</button>
+          <button id="replacePasteButton" type="button" class="btn-danger">Replace</button>
           <button id="appendPasteButton" type="button">Append</button>
           <button id="cancelPasteButton" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="metaKeyDefModal" class="modal-backdrop" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="metaKeyDefModalTitle">
+        <h2 id="metaKeyDefModalTitle">Edit Meta Key</h2>
+        <p id="metaKeyDefModalUsage" class="modal-usage-info"></p>
+        <div id="metaKeyDefFields" class="modal-fields">
+          <label>
+            Key name
+            <input id="metaKeyDefModalKey" type="text" />
+          </label>
+          <label>
+            Default value
+            <input id="metaKeyDefModalDefault" type="text" placeholder="(empty)" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button id="metaKeyDefModalOverride" type="button">Override All Notes</button>
+          <button id="metaKeyDefModalDefOnly" type="button">Remove meta only</button>
+          <button id="metaKeyDefModalCancel" type="button">Cancel</button>
         </div>
       </div>
     </div>
