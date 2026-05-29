@@ -20,9 +20,11 @@ const selectionInfo = document.querySelector("#selectionInfo");
 const noteInspectorTab = document.querySelector("#noteInspectorTab");
 const noteSettingTab = document.querySelector("#noteSettingTab");
 const noteAnalysisTab = document.querySelector("#noteAnalysisTab");
+const noteAutomationTab = document.querySelector("#noteAutomationTab");
 const noteInspectorPanel = document.querySelector("#noteInspectorPanel");
 const noteSettingPanel = document.querySelector("#noteSettingPanel");
 const noteAnalysisPanel = document.querySelector("#noteAnalysisPanel");
+const noteAutomationPanel = document.querySelector("#noteAutomationPanel");
 const analysisElements = {
   kpiScore: document.querySelector("#kpiScore"),
   kpiDifficultyLabel: document.querySelector("#kpiDifficultyLabel"),
@@ -127,6 +129,7 @@ const state = {
   viewStart: 0,
   viewEnd: 0,
   waveform: null,
+  audioBuffer: null,
   selectedLane: 0,
   laneCount: 4,
   notes: [],
@@ -161,6 +164,48 @@ const renderAnalysis = createAnalysisRenderer({
   state,
   getBpm: () => Number(bpmInput.value) || 0,
   elements: analysisElements,
+});
+
+const automationElements = {
+  audioStatus: document.querySelector("#automationAudioStatus"),
+  analyzeButton: document.querySelector("#automationAnalyzeButton"),
+  algorithm: document.querySelector("#automationAlgorithm"),
+  sensitivity: document.querySelector("#automationSensitivity"),
+  sensitivityValue: document.querySelector("#automationSensitivityValue"),
+  minGap: document.querySelector("#automationMinGap"),
+  snapToggle: document.querySelector("#automationSnap"),
+  laneStrategy: document.querySelector("#automationLaneStrategy"),
+  noteType: document.querySelector("#automationNoteType"),
+  npsCap: document.querySelector("#automationNpsCap"),
+  timeRange: document.querySelector("#automationTimeRange"),
+  bandMapRow: document.querySelector("#automationBandMapRow"),
+  bandLow: document.querySelector("#automationBandLow"),
+  bandMid: document.querySelector("#automationBandMid"),
+  bandHigh: document.querySelector("#automationBandHigh"),
+  stats: document.querySelector("#automationStats"),
+  generateButton: document.querySelector("#automationGenerateButton"),
+  applyMode: document.querySelector("#automationApplyMode"),
+  applyButton: document.querySelector("#automationApplyButton"),
+  clearButton: document.querySelector("#automationClearButton"),
+};
+
+const noteAutomation = createNoteAutomation({
+  state,
+  elements: automationElements,
+  getBpm: () => Number(bpmInput.value) || 0,
+  getLPB,
+  getOffsetSeconds,
+  createNoteId,
+  hasOverlappingNote,
+  pushHistory,
+  sortNotes,
+  refreshUi,
+  draw,
+  canvasCtx: ctx,
+  getCanvasMetrics,
+  xFromTime,
+  getLanes,
+  getNoteSize,
 });
 
 function getLanes() {
@@ -283,7 +328,7 @@ function playMetronomeSound(isDownbeat, volume) {
 function tickHitSounds(from, to) {
   if (!hitSoundInput.checked) return;
   const vol = Number(hitSoundVol.value);
-  state.notes.forEach((note) => {
+  const tickNotes = (notes) => notes.forEach((note) => {
     if (note.type === "curve") {
       note.points.forEach((pt) => {
         if (pt.time > from && pt.time <= to) playHitSound(vol);
@@ -292,6 +337,8 @@ function tickHitSounds(from, to) {
       if (note.time > from && note.time <= to) playHitSound(vol);
     }
   });
+  tickNotes(state.notes);
+  tickNotes(noteAutomation.getPreviewNotes());
 }
 
 function tickMetronome(from, to) {
@@ -711,6 +758,9 @@ function draw() {
   drawBeatGrid(metrics);
   drawWaveform(metrics);
   drawNotes(metrics);
+  if (typeof noteAutomation !== "undefined" && noteAutomation.isPreviewing()) {
+    noteAutomation.renderPreview(metrics);
+  }
   drawPlayhead(metrics);
   drawMinimap();
 }
@@ -1427,6 +1477,7 @@ function openMetaKeyDefModal(mode, key) {
   metaKeyDefModalLabel.textContent = "Key name";
   metaKeyDefModalTitle.textContent = mode === "edit" ? "Edit Meta Key" : "Delete Meta Key";
   metaKeyDefModalUsage.textContent = `${count} note${count !== 1 ? "s" : ""} currently use this key`;
+  metaKeyDefModalOverride.disabled = false;
   metaKeyDefModalDefOnly.disabled = false;
   metaKeyDefModalDefOnly.title = "";
 
@@ -1438,6 +1489,7 @@ function openMetaKeyDefModal(mode, key) {
     metaKeyDefModalOverride.className = "btn-warning";
     metaKeyDefModalDefOnly.textContent = "Rename Definition Only";
     metaKeyDefModalDefOnly.className = "";
+    syncRenameModalButtons();
   } else {
     metaKeyDefFields.hidden = true;
     metaKeyDefModalOverride.textContent = "Remove from All Notes";
@@ -1458,6 +1510,7 @@ function openMetaValueEditModal(key, value) {
   metaKeyDefModalLabel.textContent = "Value";
   metaKeyDefModalTitle.textContent = "Rename Value";
   metaKeyDefModalUsage.textContent = `${count} note${count !== 1 ? "s" : ""} currently use "${key}: ${value}"`;
+  metaKeyDefModalOverride.disabled = false;
   metaKeyDefModalDefOnly.disabled = false;
   metaKeyDefModalDefOnly.title = "";
   metaKeyDefFields.hidden = false;
@@ -1466,6 +1519,7 @@ function openMetaValueEditModal(key, value) {
   metaKeyDefModalOverride.className = "btn-warning";
   metaKeyDefModalDefOnly.textContent = "Rename Definition Only";
   metaKeyDefModalDefOnly.className = "";
+  syncRenameModalButtons();
 
   metaKeyDefModal.hidden = false;
 }
@@ -1477,6 +1531,7 @@ function openMetaValueDeleteModal(key, value) {
   state.metaKeyModalOriginalValue = value;
 
   const inUse = count > 0;
+  metaKeyDefModalOverride.disabled = false;
   metaKeyDefModalLabel.textContent = "Value";
   metaKeyDefModalTitle.textContent = "Delete Value";
   metaKeyDefModalUsage.textContent = inUse
@@ -1493,6 +1548,15 @@ function openMetaValueDeleteModal(key, value) {
   metaKeyDefModalDefOnly.title = inUse ? "Còn note đang dùng value này — chỉ có thể xóa khỏi tất cả notes" : "";
 
   metaKeyDefModal.hidden = false;
+}
+
+// Enable/disable action buttons based on whether the rename input is non-empty.
+// Only applies in edit/valueEdit modes; other modes manage button state themselves.
+function syncRenameModalButtons() {
+  if (state.metaKeyModalMode !== "edit" && state.metaKeyModalMode !== "valueEdit") return;
+  const empty = !metaKeyDefModalKey.value.trim();
+  metaKeyDefModalOverride.disabled = empty;
+  metaKeyDefModalDefOnly.disabled = empty;
 }
 
 function closeMetaKeyDefModal() {
@@ -1727,18 +1791,25 @@ function setInspectorTab(tab) {
   const isInspector = tab === "inspector";
   const isSetting = tab === "setting";
   const isAnalysis = tab === "analysis";
+  const isAutomation = tab === "automation";
   noteInspectorTab.classList.toggle("active", isInspector);
   noteSettingTab.classList.toggle("active", isSetting);
   noteAnalysisTab.classList.toggle("active", isAnalysis);
+  noteAutomationTab.classList.toggle("active", isAutomation);
   noteInspectorTab.setAttribute("aria-selected", String(isInspector));
   noteSettingTab.setAttribute("aria-selected", String(isSetting));
   noteAnalysisTab.setAttribute("aria-selected", String(isAnalysis));
+  noteAutomationTab.setAttribute("aria-selected", String(isAutomation));
   noteInspectorPanel.hidden = !isInspector;
   noteSettingPanel.hidden = !isSetting;
   noteAnalysisPanel.hidden = !isAnalysis;
+  noteAutomationPanel.hidden = !isAutomation;
   if (isAnalysis) {
     resizeCanvas();
     renderAnalysis();
+  }
+  if (isAutomation) {
+    noteAutomation.open();
   }
 }
 
@@ -2038,6 +2109,77 @@ function importLevel(file) {
   reader.readAsText(file);
 }
 
+function estimateTimingFromAudio(audioBuffer) {
+  const frameSize = 2048;
+  const hopSize = 512;
+  const frameCount = Math.max(0, Math.floor((audioBuffer.length - frameSize) / hopSize) + 1);
+  if (frameCount < 12) return null;
+
+  const energies = new Float32Array(frameCount);
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    const start = frame * hopSize;
+    let sumSq = 0;
+    for (let channel = 0; channel < audioBuffer.numberOfChannels; channel += 1) {
+      const data = audioBuffer.getChannelData(channel);
+      for (let i = 0; i < frameSize; i += 1) {
+        const sample = data[start + i];
+        sumSq += sample * sample;
+      }
+    }
+    energies[frame] = Math.sqrt(sumSq / (frameSize * audioBuffer.numberOfChannels));
+  }
+
+  const onset = new Float32Array(frameCount);
+  let maxOnset = 0;
+  for (let i = 1; i < frameCount; i += 1) {
+    const diff = energies[i] - energies[i - 1];
+    onset[i] = diff > 0 ? diff : 0;
+    if (onset[i] > maxOnset) maxOnset = onset[i];
+  }
+  if (maxOnset <= 0) return null;
+
+  const floor = maxOnset * 0.08;
+  const peaks = [];
+  for (let i = 2; i < frameCount - 2; i += 1) {
+    const value = onset[i];
+    if (value < floor) continue;
+    if (value < onset[i - 1] || value < onset[i + 1] || value < onset[i - 2] || value < onset[i + 2]) continue;
+    peaks.push({ time: (i * hopSize) / audioBuffer.sampleRate, strength: value });
+  }
+  if (peaks.length < 4) return null;
+
+  const scoringPeaks = peaks.slice(0, 360);
+  let best = null;
+  for (let bpm = 60; bpm <= 200; bpm += 1) {
+    const period = 60 / bpm;
+    const tolerance = Math.min(0.07, period * 0.14);
+    const phaseCandidates = scoringPeaks.slice(0, 24).map((peak) => peak.time % period);
+    phaseCandidates.forEach((phase) => {
+      let score = 0;
+      scoringPeaks.forEach((peak) => {
+        const pos = ((peak.time - phase) % period + period) % period;
+        const distance = Math.min(pos, period - pos);
+        if (distance <= tolerance) score += peak.strength * (1 - distance / tolerance);
+      });
+      if (!best || score > best.score) best = { bpm, phase, score };
+    });
+  }
+  if (!best) return null;
+  return {
+    bpm: best.bpm,
+    offsetMs: Math.max(0, Math.round(best.phase * 1000)),
+  };
+}
+
+function autoFillTimingIfEmptyLevel(audioBuffer) {
+  if (state.notes.length) return;
+  const timing = estimateTimingFromAudio(audioBuffer);
+  if (!timing) return;
+  bpmInput.value = clamp(timing.bpm, Number(bpmInput.min), Number(bpmInput.max));
+  offsetInput.value = timing.offsetMs;
+  draw();
+}
+
 async function buildWaveform(file) {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return;
@@ -2045,6 +2187,9 @@ async function buildWaveform(file) {
   try {
     const arrayBuffer = await file.arrayBuffer();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    state.audioBuffer = audioBuffer;
+    noteAutomation.open();
+    autoFillTimingIfEmptyLevel(audioBuffer);
     const channelCount = audioBuffer.numberOfChannels;
     const sampleCount = Math.min(6000, Math.ceil(audioBuffer.duration * 220));
     const blockSize = Math.max(1, Math.floor(audioBuffer.length / sampleCount));
@@ -2116,6 +2261,8 @@ audioInput.addEventListener("change", () => {
   if (!file) return;
   const url = URL.createObjectURL(file);
   state.waveform = null;
+  state.audioBuffer = null;
+  noteAutomation.reset();
   audio.src = url;
   state.songName = file.name;
   songMeta.textContent = file.name;
@@ -2482,6 +2629,7 @@ clearButton.addEventListener("click", () => {
 noteInspectorTab.addEventListener("click", () => setInspectorTab("inspector"));
 noteSettingTab.addEventListener("click", () => setInspectorTab("setting"));
 noteAnalysisTab.addEventListener("click", () => setInspectorTab("analysis"));
+noteAutomationTab.addEventListener("click", () => setInspectorTab("automation"));
 
 addMetaButton.addEventListener("click", () => {
   const key = metaKeyInput.value;
@@ -2679,6 +2827,8 @@ metaKeyDefModalDefOnly.addEventListener("click", () => {
   else if (state.metaKeyModalMode === "valueEdit") commitMetaValueEdit(false);
   else if (state.metaKeyModalMode === "valueDelete") commitMetaValueDelete(false);
 });
+
+metaKeyDefModalKey.addEventListener("input", syncRenameModalButtons);
 
 metaKeyDefModalCancel.addEventListener("click", closeMetaKeyDefModal);
 

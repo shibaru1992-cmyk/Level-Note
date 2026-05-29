@@ -505,6 +505,130 @@ h2 {
   color: var(--text);
 }
 
+.automation-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.automation-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.automation-status span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.automation-status button {
+  flex-shrink: 0;
+}
+
+.automation-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.automation-group {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px 12px;
+  margin: 0;
+  min-width: 0;
+}
+
+.automation-group legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.automation-band-map {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.automation-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.automation-field:last-child {
+  margin-bottom: 0;
+}
+
+.automation-field > span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.automation-field > span em {
+  font-style: normal;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.automation-field select,
+.automation-field input[type="number"] {
+  width: 100%;
+}
+
+.automation-field input[type="range"] {
+  width: 100%;
+}
+
+.automation-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.automation-inline > span {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.automation-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.automation-stats {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.automation-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.automation-apply-mode {
+  min-width: 0;
+}
+
 .analysis-panel {
   display: block;
   overflow: auto;
@@ -1350,6 +1474,10 @@ th {
   display: grid;
   gap: 10px;
   margin: 14px 0 4px;
+}
+
+.modal-fields[hidden] {
+  display: none;
 }
 
 .modal-fields label {
