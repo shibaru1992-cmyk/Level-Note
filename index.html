@@ -284,8 +284,14 @@
                 <input id="automationSensitivity" type="range" min="0" max="100" value="55" />
               </label>
               <label class="automation-field">
-                <span>Min gap (ms)</span>
-                <input id="automationMinGap" type="number" min="0" max="2000" step="10" value="90" />
+                <span>Min spacing <em id="automationMinGapValue">1/4 = 0.500s</em></span>
+                <select id="automationMinGap">
+                  <option value="1">1</option>
+                  <option value="0.5">1/2</option>
+                  <option value="0.25" selected>1/4</option>
+                  <option value="0.125">1/8</option>
+                  <option value="0.0625">1/16</option>
+                </select>
               </label>
             </fieldset>
 

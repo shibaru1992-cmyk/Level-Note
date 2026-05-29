@@ -220,6 +220,29 @@ function createNoteAutomation(config) {
     return clampAutomationTime(offset + Math.round((time - offset) / step) * step);
   }
 
+  function getMinGapSeconds(settings) {
+    const bpm = getBpm();
+    if (!bpm) return 0;
+    return (60 / bpm) * settings.minGapBeats;
+  }
+
+  function getMinGapLabel() {
+    const labels = {
+      1: "1",
+      0.5: "1/2",
+      0.25: "1/4",
+      0.125: "1/8",
+      0.0625: "1/16",
+    };
+    return labels[elements.minGap.value] || elements.minGap.options[elements.minGap.selectedIndex]?.textContent || "1/4";
+  }
+
+  function updateTimingLabels() {
+    if (!elements.minGapValue) return;
+    const seconds = getMinGapSeconds(readSettings());
+    elements.minGapValue.textContent = `${getMinGapLabel()} = ${seconds.toFixed(3)}s`;
+  }
+
   // ------------------------------------------------------------ detection
   function detectOnsets(settings) {
     if (!features) return [];
@@ -299,7 +322,7 @@ function createNoteAutomation(config) {
     }
     onsets.sort((a, b) => a.time - b.time);
 
-    const minGap = Math.max(settings.minGapMs / 1000, settings.npsCap > 0 ? 1 / settings.npsCap : 0);
+    const minGap = Math.max(getMinGapSeconds(settings), settings.npsCap > 0 ? 1 / settings.npsCap : 0);
     const result = [];
     let lastTime = -Infinity;
     let counter = 0;
@@ -337,7 +360,7 @@ function createNoteAutomation(config) {
     return {
       algorithm: elements.algorithm.value,
       sensitivity: Number(elements.sensitivity.value),
-      minGapMs: Number(elements.minGap.value) || 0,
+      minGapBeats: Number(elements.minGap.value) || 0.25,
       snap: elements.snapToggle.checked,
       laneStrategy: elements.laneStrategy.value,
       noteType: elements.noteType.value,
@@ -547,6 +570,7 @@ function createNoteAutomation(config) {
         if (el === elements.sensitivity && elements.sensitivityValue) {
           elements.sensitivityValue.textContent = elements.sensitivity.value;
         }
+        if (el === elements.minGap) updateTimingLabels();
         if (el === elements.algorithm || el === elements.laneStrategy) syncBandVisibility();
         if (!features) return;
         clearTimeout(timer);
@@ -561,6 +585,7 @@ function createNoteAutomation(config) {
     populateLaneSelect(elements.bandMid, Math.floor(state.laneCount / 2));
     populateLaneSelect(elements.bandHigh, state.laneCount - 1);
     if (elements.sensitivityValue) elements.sensitivityValue.textContent = elements.sensitivity.value;
+    updateTimingLabels();
     // Invalidate stale analysis if the audio changed.
     if (analyzedBufferRef !== state.audioBuffer) {
       features = null;
@@ -580,6 +605,7 @@ function createNoteAutomation(config) {
     apply,
     clearPreview,
     reset,
+    updateTimingLabels,
     renderPreview,
     isPreviewing: () => previewing,
     getPreviewNotes: () => (previewing ? previewNotes : []),

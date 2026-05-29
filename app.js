@@ -173,6 +173,7 @@ const automationElements = {
   sensitivity: document.querySelector("#automationSensitivity"),
   sensitivityValue: document.querySelector("#automationSensitivityValue"),
   minGap: document.querySelector("#automationMinGap"),
+  minGapValue: document.querySelector("#automationMinGapValue"),
   snapToggle: document.querySelector("#automationSnap"),
   laneStrategy: document.querySelector("#automationLaneStrategy"),
   noteType: document.querySelector("#automationNoteType"),
@@ -2190,6 +2191,7 @@ function autoFillTimingIfEmptyLevel(audioBuffer) {
   if (!timing) return;
   bpmInput.value = clamp(timing.bpm, Number(bpmInput.min), Number(bpmInput.max));
   offsetInput.value = timing.offsetMs;
+  noteAutomation.updateTimingLabels();
   draw();
 }
 
@@ -3028,7 +3030,10 @@ rateGroup.addEventListener("click", (event) => {
 });
 
 exportButton.addEventListener("click", exportLevel);
-bpmInput.addEventListener("input", draw);
+bpmInput.addEventListener("input", () => {
+  draw();
+  noteAutomation.updateTimingLabels();
+});
 snapInput.addEventListener("change", draw);
 lpbInput.addEventListener("input", draw);
 lpbInput.addEventListener("change", () => {
