@@ -66,14 +66,20 @@ const cancelPasteButton = document.querySelector("#cancelPasteButton");
 const inspectorResizeHandle = document.querySelector("#inspectorResizeHandle");
 const metaKeysList = document.querySelector("#metaKeysList");
 const metaKeyAddKey = document.querySelector("#metaKeyAddKey");
-const metaKeyAddDefault = document.querySelector("#metaKeyAddDefault");
 const metaKeyAddSubmit = document.querySelector("#metaKeyAddSubmit");
+const colorModeInput = document.querySelector("#colorModeInput");
+const colorByKeyWrap = document.querySelector("#colorByKeyWrap");
+const colorByKeyInput = document.querySelector("#colorByKeyInput");
+const typeColorRow = document.querySelector("#typeColorRow");
+const typeColorTap = document.querySelector("#typeColorTap");
+const typeColorHold = document.querySelector("#typeColorHold");
+const typeColorCurve = document.querySelector("#typeColorCurve");
 const metaKeyDefModal = document.querySelector("#metaKeyDefModal");
 const metaKeyDefModalTitle = document.querySelector("#metaKeyDefModalTitle");
 const metaKeyDefModalUsage = document.querySelector("#metaKeyDefModalUsage");
 const metaKeyDefFields = document.querySelector("#metaKeyDefFields");
+const metaKeyDefModalLabel = document.querySelector("#metaKeyDefModalLabel");
 const metaKeyDefModalKey = document.querySelector("#metaKeyDefModalKey");
-const metaKeyDefModalDefault = document.querySelector("#metaKeyDefModalDefault");
 const metaKeyDefModalOverride = document.querySelector("#metaKeyDefModalOverride");
 const metaKeyDefModalDefOnly = document.querySelector("#metaKeyDefModalDefOnly");
 const metaKeyDefModalCancel = document.querySelector("#metaKeyDefModalCancel");
@@ -113,6 +119,8 @@ const lanePalette = [
 
 const tapMinGap = 0.08;
 
+const DEFAULT_TYPE_COLORS = { tap: "#62a8ff", hold: "#45d39a", curve: "#b98cff" };
+
 const state = {
   songName: "",
   duration: 0,
@@ -142,7 +150,11 @@ const state = {
   metaKeyDefs: [],
   metaKeyModalMode: null,
   metaKeyModalOriginalKey: null,
+  metaKeyModalOriginalValue: null,
   editMetaNoteId: null,
+  colorMode: "lane",
+  colorByKey: null,
+  typeColors: { ...DEFAULT_TYPE_COLORS },
 };
 
 const renderAnalysis = createAnalysisRenderer({
@@ -354,6 +366,9 @@ function pushHistory() {
       laneCount: state.laneCount,
       selectedLane: state.selectedLane,
       metaKeyDefs: state.metaKeyDefs,
+      colorMode: state.colorMode,
+      colorByKey: state.colorByKey,
+      typeColors: state.typeColors,
       notes: state.notes,
     }),
   );
@@ -733,7 +748,7 @@ function drawMinimap() {
 
   state.notes.forEach((note) => {
     const x = (note.time / state.duration) * width;
-    miniCtx.fillStyle = lanePalette[note.lane % lanePalette.length];
+    miniCtx.fillStyle = getNoteColor(note);
     miniCtx.fillRect(x, 8, 2, height - 16);
   });
 
@@ -843,7 +858,8 @@ function drawNotes(metrics) {
     const x = xFromTime(note.time, metrics);
     const y = metrics.padding.top + note.lane * metrics.laneHeight + metrics.laneHeight / 2;
     const isSelected = state.selectedNoteIds.has(note.id);
-    ctx.fillStyle = lane.color;
+    const noteColor = getNoteColor(note);
+    ctx.fillStyle = noteColor;
     ctx.strokeStyle = isSelected ? "#ffffff" : "#0b0d0f";
     if (note.type === "curve") {
       const renderedPoints = note.points.map((point, index) =>
@@ -861,7 +877,7 @@ function drawNotes(metrics) {
         ctx.save();
         if (segmentIsEditing) ctx.setLineDash([8, 6]);
         ctx.lineWidth = Math.max(3, noteSize * 0.45);
-        ctx.strokeStyle = lane.color;
+        ctx.strokeStyle = getPointColor(note, from.lane);
         ctx.beginPath();
         ctx.moveTo(xFromTime(from.time, metrics), metrics.padding.top + from.lane * metrics.laneHeight + metrics.laneHeight / 2);
         ctx.lineTo(xFromTime(to.time, metrics), metrics.padding.top + to.lane * metrics.laneHeight + metrics.laneHeight / 2);
@@ -877,7 +893,7 @@ function drawNotes(metrics) {
         const isEditingPoint = editing?.noteId === note.id && editing.kind === "curve" && editing.pointIndex === index;
         const pointLane = lanes[renderedPoint.lane];
         if (!pointLane) return;
-        ctx.fillStyle = pointLane.color;
+        ctx.fillStyle = getPointColor(note, renderedPoint.lane);
         ctx.strokeStyle = isSelected || note.id === state.activeCurveId || isEditingPoint ? "#ffffff" : "#0b0d0f";
         ctx.beginPath();
         ctx.arc(
@@ -912,7 +928,7 @@ function drawNotes(metrics) {
           );
           ctx.stroke();
           ctx.setLineDash([]);
-          ctx.fillStyle = previewLane.color;
+          ctx.fillStyle = getPointColor(note, state.curvePreviewPoint.lane);
           ctx.strokeStyle = "#ffffff";
           ctx.beginPath();
           ctx.arc(
@@ -950,19 +966,19 @@ function drawNotes(metrics) {
       ctx.beginPath();
       ctx.moveTo(startX, startY);
       ctx.lineTo(endX, endY);
-      ctx.strokeStyle = isEditingHold && !isValidEdit ? "rgba(255, 107, 107, 0.95)" : lane.color;
+      ctx.strokeStyle = isEditingHold && !isValidEdit ? "rgba(255, 107, 107, 0.95)" : noteColor;
       ctx.stroke();
       ctx.restore();
       ctx.lineWidth = 1;
       ctx.strokeStyle = isSelected ? "#ffffff" : "#0b0d0f";
-      ctx.fillStyle = holdEnd.lane === note.lane ? lane.color : "rgba(255, 107, 107, 0.95)";
+      ctx.fillStyle = holdEnd.lane === note.lane ? noteColor : "rgba(255, 107, 107, 0.95)";
       ctx.beginPath();
       ctx.arc(endX, endY, isSelected || (isEditingHold && editing.pointIndex === "end") ? noteSize + 2 : noteSize, 0, Math.PI * 2);
       ctx.fill();
       ctx.lineWidth = isSelected || (isEditingHold && editing.pointIndex === "end") ? 3 : 1;
       ctx.stroke();
       ctx.lineWidth = 1;
-      ctx.fillStyle = holdStart.lane === note.lane ? lane.color : "rgba(255, 107, 107, 0.95)";
+      ctx.fillStyle = holdStart.lane === note.lane ? noteColor : "rgba(255, 107, 107, 0.95)";
       ctx.beginPath();
       ctx.arc(startX, startY, isSelected || (isEditingHold && editing.pointIndex === "start") ? noteSize + 2 : noteSize, 0, Math.PI * 2);
       ctx.fill();
@@ -1001,23 +1017,24 @@ function drawNotes(metrics) {
       const previewX = xFromTime(preview.time, metrics);
       const previewY = metrics.padding.top + preview.lane * metrics.laneHeight + metrics.laneHeight / 2;
       const isValid = isValidHoldPoints(start, preview);
+      const previewColor = state.colorMode === "meta" ? state.typeColors.hold : lane.color;
       ctx.save();
       ctx.setLineDash(isValid ? [8, 6] : [3, 5]);
       ctx.lineWidth = Math.max(2, noteSize * 0.36);
-      ctx.strokeStyle = isValid ? lane.color : "rgba(255, 107, 107, 0.95)";
+      ctx.strokeStyle = isValid ? previewColor : "rgba(255, 107, 107, 0.95)";
       ctx.beginPath();
       ctx.moveTo(startX, startY);
       ctx.lineTo(previewX, previewY);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = lane.color;
+      ctx.fillStyle = previewColor;
       ctx.strokeStyle = "#ffffff";
       ctx.beginPath();
       ctx.arc(startX, startY, noteSize + 2, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
       if (preview !== start) {
-        ctx.fillStyle = isValid ? lane.color : "rgba(255, 107, 107, 0.95)";
+        ctx.fillStyle = isValid ? previewColor : "rgba(255, 107, 107, 0.95)";
         ctx.beginPath();
         ctx.arc(previewX, previewY, noteSize, 0, Math.PI * 2);
         ctx.fill();
@@ -1053,6 +1070,7 @@ function refreshUi() {
   laneCountInput.value = state.laneCount;
   renderMetaKeysList();
   renderMetaKeySelect();
+  renderColorControls();
   renderInspector();
   renderAnalysis();
   draw();
@@ -1078,11 +1096,9 @@ function escapeHtml(value) {
 }
 
 function renderNotesTable(notes) {
-  const lanes = getLanes();
   const rows = notes
     .map((note) => {
-      const lane = lanes[note.lane];
-      const color = escapeHtml(lane ? lane.color : "#9aa6b2");
+      const color = escapeHtml(getNoteColor(note));
       let laneDetail;
       if (note.type === "hold") {
         laneDetail = `Lane ${note.lane + 1} · ${Math.round(note.duration * 1000)}ms`;
@@ -1187,24 +1203,168 @@ function getMetaKeyUsageCount(key) {
   return state.notes.filter((note) => note.meta.some((m) => m.key === key)).length;
 }
 
+function getMetaValueUsageCount(key, value) {
+  return state.notes.filter((note) => note.meta.some((m) => m.key === key && m.value === value)).length;
+}
+
+function getMetaValueDef(key, value) {
+  const def = getMetaKeyDef(key);
+  return def ? def.values.find((v) => v.value === value) || null : null;
+}
+
+// ── Color generation & resolution ────────────────────────────────────────
+
+const colorGenPalette = [
+  ...lanePalette,
+  "#ff5d5d",
+  "#5dffa0",
+  "#ffd35d",
+  "#5db4ff",
+  "#c95dff",
+  "#5dffe0",
+  "#ff9d5d",
+  "#9dff5d",
+  "#ff5dc9",
+  "#5d7dff",
+];
+
+function normalizeHex(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function hslToHex(h, s, l) {
+  s /= 100;
+  l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = (x) => Math.round(255 * x).toString(16).padStart(2, "0");
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+
+function getUsedValueColors() {
+  const used = new Set();
+  state.metaKeyDefs.forEach((def) => def.values.forEach((v) => v.color && used.add(normalizeHex(v.color))));
+  return used;
+}
+
+function generateUniqueColor() {
+  const used = getUsedValueColors();
+  for (const c of colorGenPalette) {
+    if (!used.has(normalizeHex(c))) return c;
+  }
+  let count = 0;
+  state.metaKeyDefs.forEach((def) => (count += def.values.length));
+  for (let i = 0; i < 720; i += 1) {
+    const hue = ((count + i) * 137.508) % 360;
+    const c = hslToHex(hue, 68, 62);
+    if (!used.has(normalizeHex(c))) return c;
+  }
+  return "#888888";
+}
+
+function assignMissingColors() {
+  state.metaKeyDefs.forEach((def) => {
+    def.values.forEach((v) => {
+      if (!v.color) v.color = generateUniqueColor();
+    });
+  });
+}
+
+// Convert raw/legacy defs into the new {key, defaultValue, values:[{value,color}]} shape,
+// gather distinct values already used by notes, then fill in any missing colors.
+function normalizeMetaKeyDefs(rawDefs, notes) {
+  const defs = (Array.isArray(rawDefs) ? rawDefs : [])
+    .filter((d) => d && typeof d.key === "string" && d.key.trim())
+    .map((d) => {
+      const key = d.key.trim();
+      const values = Array.isArray(d.values)
+        ? d.values
+            .filter((v) => v && v.value !== undefined && v.value !== null)
+            .map((v) => ({ value: String(v.value), color: typeof v.color === "string" && v.color ? v.color : null }))
+        : [];
+      const defaultValue = typeof d.defaultValue === "string" ? d.defaultValue : "";
+      // Legacy: defaultValue was free text -> seed it as a value
+      if (typeof d.defaultValue === "string" && d.defaultValue !== "" && !values.some((v) => v.value === d.defaultValue)) {
+        values.push({ value: d.defaultValue, color: null });
+      }
+      return { key, defaultValue, values };
+    });
+  (Array.isArray(notes) ? notes : []).forEach((note) => {
+    (note.meta || []).forEach((m) => {
+      const def = defs.find((d) => d.key === m.key);
+      if (def && !def.values.some((v) => v.value === String(m.value))) {
+        def.values.push({ value: String(m.value), color: null });
+      }
+    });
+  });
+  state.metaKeyDefs = defs;
+  assignMissingColors();
+  defs.forEach((def) => {
+    if (def.values.length && !def.values.some((v) => v.value === def.defaultValue)) {
+      def.defaultValue = def.values[0].value;
+    }
+  });
+  return defs;
+}
+
+function getNoteColor(note) {
+  if (state.colorMode === "meta") {
+    const key = state.colorByKey;
+    if (key) {
+      const entry = note.meta.find((m) => m.key === key);
+      if (entry) {
+        const vd = getMetaValueDef(key, entry.value);
+        if (vd && vd.color) return vd.color;
+      }
+    }
+    return state.typeColors[note.type] || "#9aa6b2";
+  }
+  return lanePalette[note.lane % lanePalette.length];
+}
+
+function getPointColor(note, laneIndex) {
+  if (state.colorMode === "meta") return getNoteColor(note);
+  return lanePalette[laneIndex % lanePalette.length];
+}
+
 function renderMetaKeysList() {
   if (!state.metaKeyDefs.length) {
     metaKeysList.innerHTML = `<span class="meta-keys-empty">No meta keys defined</span>`;
     return;
   }
   metaKeysList.innerHTML = state.metaKeyDefs
-    .map(
-      (def) => `<div class="meta-key-row">
-        <span class="meta-key-name">${escapeHtml(def.key)}</span>
-        <span class="meta-key-default">${
-          def.defaultValue !== ""
-            ? escapeHtml(def.defaultValue)
-            : `<span class="meta-key-no-default">(empty)</span>`
-        }</span>
-        <button class="meta-key-action-btn meta-key-edit-btn" data-key="${escapeHtml(def.key)}" type="button" title="Edit">Edit</button>
-        <button class="meta-key-action-btn meta-key-delete-btn" data-key="${escapeHtml(def.key)}" type="button" title="Delete">✕</button>
-      </div>`,
-    )
+    .map((def, index) => {
+      const valuesHtml = def.values.length
+        ? def.values
+            .map(
+              (v) => `<div class="meta-value-row" data-key="${escapeHtml(def.key)}" data-value="${escapeHtml(v.value)}">
+                <input class="meta-value-default" type="radio" name="mkdefault_${index}" title="Set default"${
+                  v.value === def.defaultValue ? " checked" : ""
+                } />
+                <input class="meta-value-color" type="color" value="${escapeHtml(v.color || "#888888")}" title="Color" />
+                <span class="meta-value-text">${escapeHtml(v.value)}</span>
+                <button class="meta-value-edit" type="button" title="Rename value">Rename</button>
+                <button class="meta-value-del" type="button" title="Delete value">✕</button>
+              </div>`,
+            )
+            .join("")
+        : `<span class="meta-value-empty">No values — add one below</span>`;
+      return `<div class="meta-key-block" data-key="${escapeHtml(def.key)}">
+        <div class="meta-key-head">
+          <span class="meta-key-name">${escapeHtml(def.key)}</span>
+          <span class="meta-key-head-actions">
+            <button class="meta-key-action-btn meta-key-edit-btn" data-key="${escapeHtml(def.key)}" type="button" title="Rename">Rename</button>
+            <button class="meta-key-action-btn meta-key-delete-btn" data-key="${escapeHtml(def.key)}" type="button" title="Delete key">✕</button>
+          </span>
+        </div>
+        <div class="meta-key-values">${valuesHtml}</div>
+        <div class="meta-value-add">
+          <input class="meta-value-add-input" type="text" data-key="${escapeHtml(def.key)}" placeholder="new value" />
+          <button class="meta-value-add-btn" data-key="${escapeHtml(def.key)}" type="button">+ value</button>
+        </div>
+      </div>`;
+    })
     .join("");
 }
 
@@ -1220,9 +1380,41 @@ function renderMetaKeySelect() {
       metaKeyInput.value = currentVal;
     }
   }
-  const def = getMetaKeyDef(metaKeyInput.value);
-  metaValueInput.placeholder = def && def.defaultValue ? def.defaultValue : "value";
+  renderMetaValueSelect();
   updateMetaButtons();
+}
+
+function renderMetaValueSelect() {
+  const def = getMetaKeyDef(metaKeyInput.value);
+  if (!def || !def.values.length) {
+    metaValueInput.innerHTML = `<option value="">— no values —</option>`;
+    return;
+  }
+  metaValueInput.innerHTML = def.values
+    .map((v) => `<option value="${escapeHtml(v.value)}"${v.value === def.defaultValue ? " selected" : ""}>${escapeHtml(v.value)}</option>`)
+    .join("");
+}
+
+function renderColorControls() {
+  colorModeInput.value = state.colorMode;
+  const isMeta = state.colorMode === "meta";
+  colorByKeyWrap.hidden = !isMeta;
+  typeColorRow.hidden = !isMeta;
+  if (state.metaKeyDefs.length) {
+    colorByKeyInput.innerHTML = state.metaKeyDefs
+      .map((d) => `<option value="${escapeHtml(d.key)}">${escapeHtml(d.key)}</option>`)
+      .join("");
+    if (!state.colorByKey || !state.metaKeyDefs.some((d) => d.key === state.colorByKey)) {
+      state.colorByKey = state.metaKeyDefs[0].key;
+    }
+    colorByKeyInput.value = state.colorByKey;
+  } else {
+    colorByKeyInput.innerHTML = `<option value="">— no keys —</option>`;
+    state.colorByKey = null;
+  }
+  typeColorTap.value = state.typeColors.tap;
+  typeColorHold.value = state.typeColors.hold;
+  typeColorCurve.value = state.typeColors.curve;
 }
 
 function openMetaKeyDefModal(mode, key) {
@@ -1230,17 +1422,21 @@ function openMetaKeyDefModal(mode, key) {
   const count = getMetaKeyUsageCount(key);
   state.metaKeyModalMode = mode;
   state.metaKeyModalOriginalKey = key;
+  state.metaKeyModalOriginalValue = null;
 
+  metaKeyDefModalLabel.textContent = "Key name";
   metaKeyDefModalTitle.textContent = mode === "edit" ? "Edit Meta Key" : "Delete Meta Key";
   metaKeyDefModalUsage.textContent = `${count} note${count !== 1 ? "s" : ""} currently use this key`;
+  metaKeyDefModalDefOnly.disabled = false;
+  metaKeyDefModalDefOnly.title = "";
 
   if (mode === "edit") {
+    metaKeyDefModalTitle.textContent = "Rename Meta Key";
     metaKeyDefFields.hidden = false;
     metaKeyDefModalKey.value = def ? def.key : key;
-    metaKeyDefModalDefault.value = def ? def.defaultValue : "";
-    metaKeyDefModalOverride.textContent = "Override All Notes";
+    metaKeyDefModalOverride.textContent = "Rename in All Notes";
     metaKeyDefModalOverride.className = "btn-warning";
-    metaKeyDefModalDefOnly.textContent = "Update Definition Only";
+    metaKeyDefModalDefOnly.textContent = "Rename Definition Only";
     metaKeyDefModalDefOnly.className = "";
   } else {
     metaKeyDefFields.hidden = true;
@@ -1253,10 +1449,57 @@ function openMetaKeyDefModal(mode, key) {
   metaKeyDefModal.hidden = false;
 }
 
+function openMetaValueEditModal(key, value) {
+  const count = getMetaValueUsageCount(key, value);
+  state.metaKeyModalMode = "valueEdit";
+  state.metaKeyModalOriginalKey = key;
+  state.metaKeyModalOriginalValue = value;
+
+  metaKeyDefModalLabel.textContent = "Value";
+  metaKeyDefModalTitle.textContent = "Rename Value";
+  metaKeyDefModalUsage.textContent = `${count} note${count !== 1 ? "s" : ""} currently use "${key}: ${value}"`;
+  metaKeyDefModalDefOnly.disabled = false;
+  metaKeyDefModalDefOnly.title = "";
+  metaKeyDefFields.hidden = false;
+  metaKeyDefModalKey.value = value;
+  metaKeyDefModalOverride.textContent = "Rename in All Notes";
+  metaKeyDefModalOverride.className = "btn-warning";
+  metaKeyDefModalDefOnly.textContent = "Rename Definition Only";
+  metaKeyDefModalDefOnly.className = "";
+
+  metaKeyDefModal.hidden = false;
+}
+
+function openMetaValueDeleteModal(key, value) {
+  const count = getMetaValueUsageCount(key, value);
+  state.metaKeyModalMode = "valueDelete";
+  state.metaKeyModalOriginalKey = key;
+  state.metaKeyModalOriginalValue = value;
+
+  const inUse = count > 0;
+  metaKeyDefModalLabel.textContent = "Value";
+  metaKeyDefModalTitle.textContent = "Delete Value";
+  metaKeyDefModalUsage.textContent = inUse
+    ? `${count} note${count !== 1 ? "s" : ""} currently use "${key}: ${value}" — must delete from all notes`
+    : `No notes use "${key}: ${value}"`;
+  metaKeyDefFields.hidden = true;
+  metaKeyDefModalOverride.textContent = "Delete from All Notes";
+  metaKeyDefModalOverride.className = "btn-danger";
+  metaKeyDefModalDefOnly.textContent = "Delete Definition Only";
+  metaKeyDefModalDefOnly.className = "btn-warning";
+  // Def-only delete would be resurrected by normalizeMetaKeyDefs while notes still use it,
+  // so only allow it when the value is unused.
+  metaKeyDefModalDefOnly.disabled = inUse;
+  metaKeyDefModalDefOnly.title = inUse ? "Còn note đang dùng value này — chỉ có thể xóa khỏi tất cả notes" : "";
+
+  metaKeyDefModal.hidden = false;
+}
+
 function closeMetaKeyDefModal() {
   metaKeyDefModal.hidden = true;
   state.metaKeyModalMode = null;
   state.metaKeyModalOriginalKey = null;
+  state.metaKeyModalOriginalValue = null;
 }
 
 // ── Edit Note Meta modal ──────────────────────────────────────────────────
@@ -1276,6 +1519,22 @@ function buildEditMetaKeySelectHtml(selectedKey) {
   return `<select class="edit-meta-key-select">${options}</select>`;
 }
 
+function buildEditMetaValueSelectHtml(key, selectedValue) {
+  const def = getMetaKeyDef(key);
+  const vals = def ? def.values : [];
+  let options = vals
+    .map(
+      (v) =>
+        `<option value="${escapeHtml(v.value)}"${v.value === selectedValue ? " selected" : ""}>${escapeHtml(v.value)}</option>`,
+    )
+    .join("");
+  if (selectedValue && !vals.some((v) => v.value === selectedValue)) {
+    options = `<option value="${escapeHtml(selectedValue)}" selected>${escapeHtml(selectedValue)} (?)</option>` + options;
+  }
+  if (!options) options = `<option value="">— no values —</option>`;
+  return `<select class="edit-meta-value-select">${options}</select>`;
+}
+
 function renderEditMetaRows() {
   const note = state.notes.find((n) => n.id === state.editMetaNoteId);
   if (!note || !note.meta.length) {
@@ -1286,7 +1545,7 @@ function renderEditMetaRows() {
     .map(
       (entry) => `<div class="edit-meta-row">
         ${buildEditMetaKeySelectHtml(entry.key)}
-        <input class="edit-meta-value-input" type="text" value="${escapeHtml(entry.value)}" />
+        ${buildEditMetaValueSelectHtml(entry.key, entry.value)}
         <button class="edit-meta-remove-row" type="button" title="Remove">×</button>
       </div>`,
     )
@@ -1298,9 +1557,7 @@ function openEditMetaModal(noteId) {
   if (!note) return;
   state.editMetaNoteId = noteId;
 
-  const lanes = getLanes();
-  const lane = lanes[note.lane];
-  const color = lane ? lane.color : "#9aa6b2";
+  const color = getNoteColor(note);
   let laneDetail;
   if (note.type === "hold") {
     laneDetail = `Lane ${note.lane + 1} · ${Math.round(note.duration * 1000)}ms`;
@@ -1320,11 +1577,16 @@ function openEditMetaModal(noteId) {
     ? `<option value="">— select key —</option>` +
       state.metaKeyDefs.map((d) => `<option value="${escapeHtml(d.key)}">${escapeHtml(d.key)}</option>`).join("")
     : `<option value="">— no keys defined —</option>`;
-  editMetaAddValue.value = "";
-  editMetaAddValue.placeholder = "value";
+  renderEditMetaAddValue();
 
   renderEditMetaRows();
   editMetaModal.hidden = false;
+}
+
+function renderEditMetaAddValue() {
+  editMetaAddValue.innerHTML = buildEditMetaValueSelectHtml(editMetaAddKey.value, "")
+    .replace('<select class="edit-meta-value-select">', "")
+    .replace("</select>", "");
 }
 
 function closeEditMetaModal() {
@@ -1335,7 +1597,6 @@ function closeEditMetaModal() {
 function commitMetaKeyEdit(applyToNotes) {
   const originalKey = state.metaKeyModalOriginalKey;
   const newKey = metaKeyDefModalKey.value.trim();
-  const newDefault = metaKeyDefModalDefault.value;
   if (!newKey) {
     closeMetaKeyDefModal();
     return;
@@ -1344,53 +1605,91 @@ function commitMetaKeyEdit(applyToNotes) {
     metaKeyDefModalKey.select();
     return;
   }
-  // Capture old default BEFORE updating definition
-  const oldDef = getMetaKeyDef(originalKey);
-  const oldDefault = oldDef ? oldDef.defaultValue : null;
-  const defIndex = state.metaKeyDefs.findIndex((d) => d.key === originalKey);
-  if (defIndex >= 0) {
-    state.metaKeyDefs[defIndex] = { key: newKey, defaultValue: newDefault };
+  const keyChanged = newKey !== originalKey;
+  if (keyChanged) pushHistory();
+  const def = getMetaKeyDef(originalKey);
+  if (def) def.key = newKey;
+  if (state.colorByKey === originalKey) state.colorByKey = newKey;
+  if (applyToNotes && keyChanged) {
+    state.notes.forEach((note) => {
+      note.meta.forEach((m) => {
+        if (m.key === originalKey) m.key = newKey;
+      });
+    });
   }
-  if (applyToNotes) {
-    const keyChanged = newKey !== originalKey;
-    const defaultChanged = oldDefault !== null && newDefault !== oldDefault;
-    if (keyChanged || defaultChanged) {
-      pushHistory();
+  refreshUi();
+  closeMetaKeyDefModal();
+}
+
+function commitMetaValueEdit(applyToNotes) {
+  const key = state.metaKeyModalOriginalKey;
+  const originalValue = state.metaKeyModalOriginalValue;
+  const newValue = metaKeyDefModalKey.value.trim();
+  if (!newValue) {
+    closeMetaKeyDefModal();
+    return;
+  }
+  const def = getMetaKeyDef(key);
+  if (!def) {
+    closeMetaKeyDefModal();
+    return;
+  }
+  if (newValue !== originalValue && def.values.some((v) => v.value === newValue)) {
+    metaKeyDefModalKey.select();
+    return;
+  }
+  const valueChanged = newValue !== originalValue;
+  if (valueChanged) {
+    pushHistory();
+    const entry = def.values.find((v) => v.value === originalValue);
+    if (entry) entry.value = newValue;
+    if (def.defaultValue === originalValue) def.defaultValue = newValue;
+    if (applyToNotes) {
       state.notes.forEach((note) => {
         note.meta.forEach((m) => {
-          if (m.key === originalKey) {
-            // Update value if it was still using the old default
-            if (defaultChanged && m.value === oldDefault) m.value = newDefault;
-            // Rename key
-            if (keyChanged) m.key = newKey;
-          }
+          if (m.key === key && m.value === originalValue) m.value = newValue;
         });
       });
-      refreshUi();
-    } else {
-      renderMetaKeysList();
-      renderMetaKeySelect();
     }
-  } else {
-    renderMetaKeysList();
-    renderMetaKeySelect();
   }
+  refreshUi();
   closeMetaKeyDefModal();
 }
 
 function commitMetaKeyDelete(applyToNotes) {
   const key = state.metaKeyModalOriginalKey;
+  pushHistory();
   state.metaKeyDefs = state.metaKeyDefs.filter((d) => d.key !== key);
+  if (state.colorByKey === key) state.colorByKey = null;
   if (applyToNotes) {
-    pushHistory();
     state.notes.forEach((note) => {
       note.meta = note.meta.filter((m) => m.key !== key);
     });
-    refreshUi();
-  } else {
-    renderMetaKeysList();
-    renderMetaKeySelect();
   }
+  refreshUi();
+  closeMetaKeyDefModal();
+}
+
+function commitMetaValueDelete(applyToNotes) {
+  const key = state.metaKeyModalOriginalKey;
+  const value = state.metaKeyModalOriginalValue;
+  const def = getMetaKeyDef(key);
+  if (!def) {
+    closeMetaKeyDefModal();
+    return;
+  }
+  // Def-only delete while notes still use the value would be resurrected by
+  // normalizeMetaKeyDefs; force full delete in that case.
+  if (!applyToNotes && getMetaValueUsageCount(key, value) > 0) return;
+  pushHistory();
+  def.values = def.values.filter((v) => v.value !== value);
+  if (def.defaultValue === value) def.defaultValue = def.values.length ? def.values[0].value : "";
+  if (applyToNotes) {
+    state.notes.forEach((note) => {
+      note.meta = note.meta.filter((m) => !(m.key === key && m.value === value));
+    });
+  }
+  refreshUi();
   closeMetaKeyDefModal();
 }
 
@@ -1675,7 +1974,14 @@ function exportLevel() {
     offsetMs: getOffsetMs(),
     lanes: state.laneCount,
     duration: Number((state.duration || 0).toFixed(3)),
-    metaKeyDefs: state.metaKeyDefs.map((d) => ({ key: d.key, defaultValue: d.defaultValue })),
+    metaKeyDefs: state.metaKeyDefs.map((d) => ({
+      key: d.key,
+      defaultValue: d.defaultValue,
+      values: (d.values || []).map((v) => ({ value: v.value, color: v.color })),
+    })),
+    colorMode: state.colorMode,
+    colorByKey: state.colorByKey,
+    typeColors: { ...state.typeColors },
     notes: state.notes.map((note) => ({
       id: note.id,
       time: note.time,
@@ -1713,11 +2019,19 @@ function importLevel(file) {
     if (data.bpm) bpmInput.value = data.bpm;
     if (data.lpb) lpbInput.value = clamp(Math.round(Number(data.lpb)), Number(lpbInput.min), Number(lpbInput.max));
     if (Number.isFinite(Number(data.offsetMs))) offsetInput.value = Math.round(Number(data.offsetMs));
-    state.metaKeyDefs = Array.isArray(data.metaKeyDefs)
-      ? data.metaKeyDefs
-          .filter((d) => d && typeof d.key === "string" && d.key.trim())
-          .map((d) => ({ key: d.key.trim(), defaultValue: typeof d.defaultValue === "string" ? d.defaultValue : "" }))
-      : [];
+    normalizeMetaKeyDefs(data.metaKeyDefs, state.notes);
+    state.colorMode = data.colorMode === "meta" ? "meta" : "lane";
+    if (typeof data.colorByKey === "string" && state.metaKeyDefs.some((d) => d.key === data.colorByKey)) {
+      state.colorByKey = data.colorByKey;
+    } else {
+      state.colorByKey = state.metaKeyDefs.length ? state.metaKeyDefs[0].key : null;
+    }
+    state.typeColors = { ...DEFAULT_TYPE_COLORS };
+    if (data.typeColors && typeof data.typeColors === "object") {
+      ["tap", "hold", "curve"].forEach((t) => {
+        if (typeof data.typeColors[t] === "string") state.typeColors[t] = data.typeColors[t];
+      });
+    }
     sortNotes();
     refreshUi();
   };
@@ -2139,11 +2453,19 @@ undoButton.addEventListener("click", () => {
     state.laneCount = previousState.laneCount || state.laneCount;
     state.selectedLane = previousState.selectedLane || 0;
     state.notes = (previousState.notes || []).map(normalizeNote);
-    state.metaKeyDefs = Array.isArray(previousState.metaKeyDefs)
-      ? previousState.metaKeyDefs
-          .filter((d) => d && typeof d.key === "string" && d.key.trim())
-          .map((d) => ({ key: d.key.trim(), defaultValue: typeof d.defaultValue === "string" ? d.defaultValue : "" }))
-      : [];
+    normalizeMetaKeyDefs(previousState.metaKeyDefs, state.notes);
+    state.colorMode = previousState.colorMode === "meta" ? "meta" : "lane";
+    if (typeof previousState.colorByKey === "string" && state.metaKeyDefs.some((d) => d.key === previousState.colorByKey)) {
+      state.colorByKey = previousState.colorByKey;
+    } else {
+      state.colorByKey = state.metaKeyDefs.length ? state.metaKeyDefs[0].key : null;
+    }
+    state.typeColors = { ...DEFAULT_TYPE_COLORS };
+    if (previousState.typeColors && typeof previousState.typeColors === "object") {
+      ["tap", "hold", "curve"].forEach((t) => {
+        if (typeof previousState.typeColors[t] === "string") state.typeColors[t] = previousState.typeColors[t];
+      });
+    }
   }
   state.selectedNoteIds.clear();
   refreshUi();
@@ -2164,15 +2486,15 @@ noteAnalysisTab.addEventListener("click", () => setInspectorTab("analysis"));
 addMetaButton.addEventListener("click", () => {
   const key = metaKeyInput.value;
   if (!key || !state.selectedNoteIds.size) return;
-  pushHistory();
   const def = getMetaKeyDef(key);
-  const value = metaValueInput.value !== "" ? metaValueInput.value : (def ? def.defaultValue : "");
+  if (!def || !def.values.length) return;
+  const value = metaValueInput.value !== "" ? metaValueInput.value : def.defaultValue || def.values[0].value;
+  pushHistory();
   getSelectedNotes().forEach((note) => {
     const existing = note.meta.find((item) => item.key === key);
     if (existing) existing.value = value;
     else note.meta.push({ key, value });
   });
-  metaValueInput.value = "";
   refreshUi();
 });
 
@@ -2200,13 +2522,11 @@ removeMetaButton.addEventListener("click", () => {
   const key = metaKeyInput.value;
   if (!key) return;
   removeMetaKeyFromSelection(key);
-  metaValueInput.value = "";
   updateMetaButtons();
 });
 
 metaKeyInput.addEventListener("change", () => {
-  const def = getMetaKeyDef(metaKeyInput.value);
-  metaValueInput.placeholder = def && def.defaultValue ? def.defaultValue : "value";
+  renderMetaValueSelect();
   updateMetaButtons();
 });
 
@@ -2283,11 +2603,12 @@ editMetaAddRowBtn.addEventListener("click", () => {
   const key = editMetaAddKey.value;
   if (!key) return;
   const def = getMetaKeyDef(key);
-  const value = editMetaAddValue.value !== "" ? editMetaAddValue.value : (def ? def.defaultValue : "");
+  if (!def || !def.values.length) return;
+  const value = editMetaAddValue.value !== "" ? editMetaAddValue.value : def.defaultValue || def.values[0].value;
   // Focus existing row if duplicate key
   for (const row of editMetaRows.querySelectorAll(".edit-meta-row")) {
     if (row.querySelector(".edit-meta-key-select")?.value === key) {
-      row.querySelector(".edit-meta-value-input")?.focus();
+      row.querySelector(".edit-meta-value-select")?.focus();
       return;
     }
   }
@@ -2295,17 +2616,23 @@ editMetaAddRowBtn.addEventListener("click", () => {
   if (empty) empty.remove();
   const newRow = document.createElement("div");
   newRow.className = "edit-meta-row";
-  newRow.innerHTML = `${buildEditMetaKeySelectHtml(key)}<input class="edit-meta-value-input" type="text" value="${escapeHtml(value)}" /><button class="edit-meta-remove-row" type="button" title="Remove">×</button>`;
+  newRow.innerHTML = `${buildEditMetaKeySelectHtml(key)}${buildEditMetaValueSelectHtml(key, value)}<button class="edit-meta-remove-row" type="button" title="Remove">×</button>`;
   editMetaRows.appendChild(newRow);
   editMetaAddKey.value = "";
-  editMetaAddValue.value = "";
-  editMetaAddValue.placeholder = "value";
-  newRow.querySelector(".edit-meta-value-input")?.focus();
+  renderEditMetaAddValue();
 });
 
-editMetaAddKey.addEventListener("change", () => {
-  const def = getMetaKeyDef(editMetaAddKey.value);
-  editMetaAddValue.placeholder = def && def.defaultValue ? def.defaultValue : "value";
+editMetaAddKey.addEventListener("change", renderEditMetaAddValue);
+
+// When a row's key select changes, rebuild that row's value dropdown
+editMetaRows.addEventListener("change", (event) => {
+  const keySelect = event.target.closest(".edit-meta-key-select");
+  if (!keySelect) return;
+  const row = keySelect.closest(".edit-meta-row");
+  const oldValueSelect = row.querySelector(".edit-meta-value-select");
+  const tmp = document.createElement("div");
+  tmp.innerHTML = buildEditMetaValueSelectHtml(keySelect.value, "");
+  if (oldValueSelect) oldValueSelect.replaceWith(tmp.firstElementChild);
 });
 
 editMetaApply.addEventListener("click", () => {
@@ -2316,7 +2643,7 @@ editMetaApply.addEventListener("click", () => {
   const usedKeys = new Set();
   rows.forEach((row) => {
     const key = row.querySelector(".edit-meta-key-select")?.value;
-    const value = row.querySelector(".edit-meta-value-input")?.value ?? "";
+    const value = row.querySelector(".edit-meta-value-select")?.value ?? "";
     if (!key) return;
     if (usedKeys.has(key)) {
       row.querySelector(".edit-meta-key-select")?.focus();
@@ -2325,7 +2652,7 @@ editMetaApply.addEventListener("click", () => {
     usedKeys.add(key);
     newMeta.push({ key, value });
   });
-  if (usedKeys.size !== newMeta.length || newMeta.length !== rows.length) return;
+  if (newMeta.length !== rows.length) return;
   pushHistory();
   note.meta = newMeta;
   refreshUi();
@@ -2342,11 +2669,15 @@ editMetaModal.addEventListener("pointerdown", (event) => {
 metaKeyDefModalOverride.addEventListener("click", () => {
   if (state.metaKeyModalMode === "edit") commitMetaKeyEdit(true);
   else if (state.metaKeyModalMode === "delete") commitMetaKeyDelete(true);
+  else if (state.metaKeyModalMode === "valueEdit") commitMetaValueEdit(true);
+  else if (state.metaKeyModalMode === "valueDelete") commitMetaValueDelete(true);
 });
 
 metaKeyDefModalDefOnly.addEventListener("click", () => {
   if (state.metaKeyModalMode === "edit") commitMetaKeyEdit(false);
   else if (state.metaKeyModalMode === "delete") commitMetaKeyDelete(false);
+  else if (state.metaKeyModalMode === "valueEdit") commitMetaValueEdit(false);
+  else if (state.metaKeyModalMode === "valueDelete") commitMetaValueDelete(false);
 });
 
 metaKeyDefModalCancel.addEventListener("click", closeMetaKeyDefModal);
@@ -2355,13 +2686,78 @@ metaKeyDefModal.addEventListener("pointerdown", (event) => {
   if (event.target === metaKeyDefModal) closeMetaKeyDefModal();
 });
 
-// Meta key list (edit/delete buttons via delegation)
+// Meta key list (key rename/delete + value add/delete via delegation)
 metaKeysList.addEventListener("click", (event) => {
   const editBtn = event.target.closest(".meta-key-edit-btn");
+  if (editBtn) {
+    openMetaKeyDefModal("edit", editBtn.dataset.key);
+    return;
+  }
   const deleteBtn = event.target.closest(".meta-key-delete-btn");
-  if (editBtn) openMetaKeyDefModal("edit", editBtn.dataset.key);
-  else if (deleteBtn) openMetaKeyDefModal("delete", deleteBtn.dataset.key);
+  if (deleteBtn) {
+    openMetaKeyDefModal("delete", deleteBtn.dataset.key);
+    return;
+  }
+  const addBtn = event.target.closest(".meta-value-add-btn");
+  if (addBtn) {
+    addMetaValue(addBtn.dataset.key);
+    return;
+  }
+  const editValueBtn = event.target.closest(".meta-value-edit");
+  if (editValueBtn) {
+    const row = editValueBtn.closest(".meta-value-row");
+    openMetaValueEditModal(row.dataset.key, row.dataset.value);
+    return;
+  }
+  const delValueBtn = event.target.closest(".meta-value-del");
+  if (delValueBtn) {
+    const row = delValueBtn.closest(".meta-value-row");
+    openMetaValueDeleteModal(row.dataset.key, row.dataset.value);
+  }
 });
+
+// Color picker (live) — update without re-rendering the list (keeps the picker open)
+metaKeysList.addEventListener("input", (event) => {
+  const colorInput = event.target.closest(".meta-value-color");
+  if (!colorInput) return;
+  const row = colorInput.closest(".meta-value-row");
+  const vd = getMetaValueDef(row.dataset.key, row.dataset.value);
+  if (vd) {
+    vd.color = colorInput.value;
+    draw();
+    drawMinimap();
+  }
+});
+
+// Default radio + Enter to add value
+metaKeysList.addEventListener("change", (event) => {
+  const radio = event.target.closest(".meta-value-default");
+  if (!radio) return;
+  const row = radio.closest(".meta-value-row");
+  const def = getMetaKeyDef(row.dataset.key);
+  if (def) def.defaultValue = row.dataset.value;
+  renderMetaValueSelect();
+});
+
+metaKeysList.addEventListener("keydown", (event) => {
+  const addInput = event.target.closest(".meta-value-add-input");
+  if (addInput && event.key === "Enter") addMetaValue(addInput.dataset.key);
+});
+
+function addMetaValue(key) {
+  const def = getMetaKeyDef(key);
+  if (!def) return;
+  const input = metaKeysList.querySelector(`.meta-value-add-input[data-key="${CSS.escape(key)}"]`);
+  const value = input ? input.value.trim() : "";
+  if (!value) return;
+  if (def.values.some((v) => v.value === value)) {
+    if (input) input.select();
+    return;
+  }
+  def.values.push({ value, color: generateUniqueColor() });
+  if (def.values.length === 1) def.defaultValue = value;
+  refreshUi();
+}
 
 // Add key definition (inline form)
 metaKeyAddSubmit.addEventListener("click", () => {
@@ -2371,19 +2767,39 @@ metaKeyAddSubmit.addEventListener("click", () => {
     metaKeyAddKey.select();
     return;
   }
-  state.metaKeyDefs.push({ key, defaultValue: metaKeyAddDefault.value });
+  state.metaKeyDefs.push({ key, defaultValue: "", values: [] });
   metaKeyAddKey.value = "";
-  metaKeyAddDefault.value = "";
-  renderMetaKeysList();
-  renderMetaKeySelect();
+  refreshUi();
 });
 
 metaKeyAddKey.addEventListener("keydown", (event) => {
   if (event.key === "Enter") metaKeyAddSubmit.click();
 });
 
-metaKeyAddDefault.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") metaKeyAddSubmit.click();
+// Note color controls
+colorModeInput.addEventListener("change", () => {
+  state.colorMode = colorModeInput.value === "meta" ? "meta" : "lane";
+  renderColorControls();
+  draw();
+  drawMinimap();
+});
+
+colorByKeyInput.addEventListener("change", () => {
+  state.colorByKey = colorByKeyInput.value || null;
+  draw();
+  drawMinimap();
+});
+
+[
+  [typeColorTap, "tap"],
+  [typeColorHold, "hold"],
+  [typeColorCurve, "curve"],
+].forEach(([input, type]) => {
+  input.addEventListener("input", () => {
+    state.typeColors[type] = input.value;
+    draw();
+    drawMinimap();
+  });
 });
 
 pasteConflictModal.addEventListener("pointerdown", (event) => {
@@ -2499,7 +2915,10 @@ window.addEventListener("keydown", (event) => {
 });
 
 setAudioEnabled(false);
+normalizeMetaKeyDefs(state.metaKeyDefs, state.notes);
+if (state.metaKeyDefs.length && !state.colorByKey) state.colorByKey = state.metaKeyDefs[0].key;
 renderMetaKeysList();
 renderMetaKeySelect();
+renderColorControls();
 resizeCanvas();
 requestAnimationFrame(animationTick);

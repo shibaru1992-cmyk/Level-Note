@@ -114,18 +114,18 @@
           <button id="clearButton" type="button" disabled>Clear</button>
         </div>
         <div id="noteInspectorPanel" class="inspector-body" role="tabpanel" aria-labelledby="noteInspectorTab">
-          <div class="selection-summary">
-            <strong id="selectionCount">0 selected</strong>
-            <span id="selectionInfo">Click note để select, kéo để select nhiều</span>
-          </div>
           <div id="metaEditorSection" class="meta-editor-section" hidden>
             <div id="metaChips" class="meta-chips"></div>
             <div class="meta-inputs">
               <select id="metaKeyInput"></select>
-              <input id="metaValueInput" type="text" placeholder="value" />
+              <select id="metaValueInput"></select>
               <button id="addMetaButton" type="button" disabled>+ Add</button>
               <button id="removeMetaButton" type="button" disabled>Remove</button>
             </div>
+          </div>
+          <div class="selection-summary">
+            <strong id="selectionCount">0 selected</strong>
+            <span id="selectionInfo">Click note để select, kéo để select nhiều</span>
           </div>
           <div id="inspectorContent" class="inspector-content"></div>
         </div>
@@ -154,11 +154,32 @@
             </div>
           </div>
           <div class="setting-section">
+            <p class="setting-section-title">Note Color</p>
+            <div class="setting-row">
+              <label class="numeric">
+                Color by
+                <select id="colorModeInput">
+                  <option value="lane">Lane</option>
+                  <option value="meta">Meta value</option>
+                </select>
+              </label>
+              <label class="numeric" id="colorByKeyWrap" hidden>
+                Key
+                <select id="colorByKeyInput"></select>
+              </label>
+            </div>
+            <div class="type-color-row" id="typeColorRow" hidden>
+              <span class="type-color-hint">Fallback theo type:</span>
+              <label class="type-color-item">Tap<input id="typeColorTap" type="color" value="#62a8ff" /></label>
+              <label class="type-color-item">Hold<input id="typeColorHold" type="color" value="#45d39a" /></label>
+              <label class="type-color-item">Curve<input id="typeColorCurve" type="color" value="#b98cff" /></label>
+            </div>
+          </div>
+          <div class="setting-section">
             <p class="setting-section-title">Meta Keys</p>
             <div class="meta-key-add-row">
               <input id="metaKeyAddKey" type="text" placeholder="key name" />
-              <input id="metaKeyAddDefault" type="text" placeholder="default value" />
-              <button id="metaKeyAddSubmit" type="button">+ Add</button>
+              <button id="metaKeyAddSubmit" type="button">+ Add Key</button>
             </div>
             <div id="metaKeysList" class="meta-keys-list">
               <span class="meta-keys-empty">No meta keys defined</span>
@@ -268,12 +289,8 @@
         <p id="metaKeyDefModalUsage" class="modal-usage-info"></p>
         <div id="metaKeyDefFields" class="modal-fields">
           <label>
-            Key name
+            <span id="metaKeyDefModalLabel">Key name</span>
             <input id="metaKeyDefModalKey" type="text" />
-          </label>
-          <label>
-            Default value
-            <input id="metaKeyDefModalDefault" type="text" placeholder="(empty)" />
           </label>
         </div>
         <div class="modal-actions">
@@ -291,7 +308,7 @@
         <div id="editMetaRows" class="edit-meta-rows"></div>
         <div class="edit-meta-add-row">
           <select id="editMetaAddKey"></select>
-          <input id="editMetaAddValue" type="text" placeholder="value" />
+          <select id="editMetaAddValue"></select>
           <button id="editMetaAddRowBtn" type="button">+ Add</button>
         </div>
         <div class="modal-actions">
