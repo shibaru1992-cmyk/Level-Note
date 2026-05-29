@@ -783,11 +783,12 @@ function drawMinimap() {
   if (state.waveform) {
     const center = height / 2;
     const waveHeight = height * 0.74;
+    const samples = state.waveform.body || state.waveform.peaks || state.waveform;
     miniCtx.strokeStyle = "rgba(69, 211, 154, 0.55)";
     miniCtx.lineWidth = 1;
     for (let x = 0; x < width; x += 1) {
-      const sampleIndex = Math.floor((x / width) * state.waveform.length);
-      const peak = state.waveform[sampleIndex] || 0;
+      const sampleIndex = Math.floor((x / width) * samples.length);
+      const peak = samples[sampleIndex] || 0;
       const barHeight = Math.max(1, peak * waveHeight);
       miniCtx.beginPath();
       miniCtx.moveTo(x, center - barHeight / 2);
@@ -824,9 +825,10 @@ function drawWaveform(metrics) {
   const waveHeight = metrics.waveformHeight;
   const top = metrics.waveformTop;
   const center = top + waveHeight / 2;
-  const samples = state.waveform;
-  const startIndex = Math.floor((state.viewStart / state.duration) * samples.length);
-  const endIndex = Math.ceil((state.viewEnd / state.duration) * samples.length);
+  const peakSamples = state.waveform.peaks || state.waveform;
+  const bodySamples = state.waveform.body || peakSamples;
+  const startIndex = Math.floor((state.viewStart / state.duration) * peakSamples.length);
+  const endIndex = Math.ceil((state.viewEnd / state.duration) * peakSamples.length);
   const visibleSamples = Math.max(1, endIndex - startIndex);
 
   ctx.save();
@@ -835,21 +837,32 @@ function drawWaveform(metrics) {
   ctx.clip();
   ctx.fillStyle = "rgba(69, 211, 154, 0.07)";
   ctx.fillRect(metrics.padding.left, top, metrics.plotWidth, waveHeight);
-  ctx.strokeStyle = "rgba(69, 211, 154, 0.55)";
   ctx.lineWidth = 1;
 
   for (let x = 0; x < metrics.plotWidth; x += 1) {
     const sampleStart = startIndex + Math.floor((x / metrics.plotWidth) * visibleSamples);
     const sampleEnd = startIndex + Math.ceil(((x + 1) / metrics.plotWidth) * visibleSamples);
     let peak = 0;
-    for (let i = sampleStart; i <= sampleEnd && i < samples.length; i += 1) {
-      peak = Math.max(peak, samples[i] || 0);
+    let bodySum = 0;
+    let bodyCount = 0;
+    for (let i = sampleStart; i <= sampleEnd && i < peakSamples.length; i += 1) {
+      peak = Math.max(peak, peakSamples[i] || 0);
+      bodySum += bodySamples[i] || 0;
+      bodyCount += 1;
     }
-    const barHeight = Math.max(1, peak * waveHeight);
+    const peakHeight = Math.max(1, peak * waveHeight);
+    const bodyHeight = Math.max(1, (bodyCount ? bodySum / bodyCount : 0) * waveHeight * 0.86);
     const drawX = metrics.padding.left + x;
+    ctx.strokeStyle = "rgba(69, 211, 154, 0.18)";
     ctx.beginPath();
-    ctx.moveTo(drawX, center - barHeight / 2);
-    ctx.lineTo(drawX, center + barHeight / 2);
+    ctx.moveTo(drawX, center - peakHeight / 2);
+    ctx.lineTo(drawX, center + peakHeight / 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(69, 211, 154, 0.72)";
+    ctx.beginPath();
+    ctx.moveTo(drawX, center - bodyHeight / 2);
+    ctx.lineTo(drawX, center + bodyHeight / 2);
     ctx.stroke();
   }
 
@@ -2194,21 +2207,34 @@ async function buildWaveform(file) {
     const sampleCount = Math.min(6000, Math.ceil(audioBuffer.duration * 220));
     const blockSize = Math.max(1, Math.floor(audioBuffer.length / sampleCount));
     const peaks = new Float32Array(sampleCount);
+    const body = new Float32Array(sampleCount);
 
     for (let i = 0; i < sampleCount; i += 1) {
       const blockStart = i * blockSize;
       const blockEnd = Math.min(audioBuffer.length, blockStart + blockSize);
       let peak = 0;
+      let sumSq = 0;
+      let count = 0;
       for (let channel = 0; channel < channelCount; channel += 1) {
         const data = audioBuffer.getChannelData(channel);
         for (let sample = blockStart; sample < blockEnd; sample += 1) {
-          peak = Math.max(peak, Math.abs(data[sample]));
+          const value = data[sample];
+          peak = Math.max(peak, Math.abs(value));
+          sumSq += value * value;
+          count += 1;
         }
       }
       peaks[i] = peak;
+      body[i] = Math.sqrt(sumSq / Math.max(1, count));
     }
 
-    state.waveform = peaks;
+    const sortedBody = Array.from(body).sort((a, b) => a - b);
+    const bodyScale = sortedBody[Math.floor(sortedBody.length * 0.95)] || 1;
+    for (let i = 0; i < body.length; i += 1) {
+      body[i] = Math.pow(clamp(body[i] / bodyScale, 0, 1), 0.72);
+    }
+
+    state.waveform = { peaks, body };
     draw();
   } finally {
     audioContext.close();
