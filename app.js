@@ -469,6 +469,50 @@ function createNoteId() {
   return id;
 }
 
+function getNoteIdNumber(id) {
+  const match = typeof id === "string" ? id.match(/^note_(\d+)$/) : null;
+  return match ? Number(match[1]) : 0;
+}
+
+function syncNextNoteIdFromNotes(notes) {
+  const maxId = notes.reduce((max, note) => Math.max(max, getNoteIdNumber(note.id)), 0);
+  state.nextNoteId = Math.max(state.nextNoteId, maxId + 1, 1);
+}
+
+function ensureUniqueNoteIds(notes) {
+  syncNextNoteIdFromNotes(notes);
+  const used = new Set();
+  notes.forEach((note) => {
+    if (!note.id || used.has(note.id)) {
+      do {
+        note.id = createNoteId();
+      } while (used.has(note.id));
+    }
+    used.add(note.id);
+  });
+  syncNextNoteIdFromNotes(notes);
+  return notes;
+}
+
+function normalizeNoteMeta(meta) {
+  if (Array.isArray(meta)) {
+    return meta
+      .filter((item) => item && typeof item.key === "string")
+      .map((item) => ({ key: item.key, value: item.value ?? "" }));
+  }
+  if (meta && typeof meta === "object") {
+    return Object.entries(meta).map(([key, value]) => ({ key, value: value ?? "" }));
+  }
+  return [];
+}
+
+function noteMetaToDictionary(meta) {
+  return normalizeNoteMeta(meta).reduce((dict, item) => {
+    dict[item.key] = item.value;
+    return dict;
+  }, {});
+}
+
 function normalizeNote(note) {
   if (!note.id) note.id = createNoteId();
   if (note.type === "curve") {
@@ -488,10 +532,7 @@ function normalizeNote(note) {
     note.lane = note.points[0]?.lane || 0;
     delete note.duration;
   }
-  if (!Array.isArray(note.meta)) note.meta = [];
-  note.meta = note.meta
-    .filter((item) => item && typeof item.key === "string")
-    .map((item) => ({ key: item.key, value: item.value ?? "" }));
+  note.meta = normalizeNoteMeta(note.meta);
   return note;
 }
 
@@ -2091,6 +2132,7 @@ function finishActiveCurve() {
 }
 
 function exportLevel() {
+  ensureUniqueNoteIds(state.notes);
   const payload = {
     version: 1,
     song: state.songName || "untitled",
@@ -2106,7 +2148,7 @@ function exportLevel() {
       type: note.type,
       ...(note.type === "hold" ? { duration: note.duration } : {}),
       ...(note.type === "curve" ? { points: note.points.map((point) => ({ ...point })) } : {}),
-      meta: note.meta || [],
+      meta: noteMetaToDictionary(note.meta),
     })),
     metaKeyDefs: state.metaKeyDefs.map((d) => ({
       key: d.key,
@@ -2139,7 +2181,7 @@ function importLevel(file) {
     const importedNotes = Array.isArray(data.notes)
       ? data.notes.map(normalizeNote).filter((note) => note.lane >= 0 && note.lane < state.laneCount)
       : [];
-    state.notes = removeOverlappingNotes(importedNotes);
+    state.notes = ensureUniqueNoteIds(removeOverlappingNotes(importedNotes));
     state.selectedNoteIds.clear();
     if (data.bpm) bpmInput.value = data.bpm;
     if (data.lpb) lpbInput.value = clamp(Math.round(Number(data.lpb)), Number(lpbInput.min), Number(lpbInput.max));
@@ -2663,11 +2705,11 @@ undoButton.addEventListener("click", () => {
   if (!previous) return;
   const previousState = JSON.parse(previous);
   if (Array.isArray(previousState)) {
-    state.notes = previousState.map(normalizeNote);
+    state.notes = ensureUniqueNoteIds(previousState.map(normalizeNote));
   } else {
     state.laneCount = previousState.laneCount || state.laneCount;
     state.selectedLane = previousState.selectedLane || 0;
-    state.notes = (previousState.notes || []).map(normalizeNote);
+    state.notes = ensureUniqueNoteIds((previousState.notes || []).map(normalizeNote));
     normalizeMetaKeyDefs(previousState.metaKeyDefs, state.notes);
     state.colorMode = previousState.colorMode === "meta" ? "meta" : "lane";
     if (typeof previousState.colorByKey === "string" && state.metaKeyDefs.some((d) => d.key === previousState.colorByKey)) {
