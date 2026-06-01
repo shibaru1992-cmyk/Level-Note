@@ -59,6 +59,7 @@ const contextMenu = document.querySelector("#contextMenu");
 const copyMenuItem = document.querySelector("#copyMenuItem");
 const pasteWithLaneMenuItem = document.querySelector("#pasteWithLaneMenuItem");
 const pasteTimeOnlyMenuItem = document.querySelector("#pasteTimeOnlyMenuItem");
+const mirrorSelectedMenuItem = document.querySelector("#mirrorSelectedMenuItem");
 const deleteMenuItem = document.querySelector("#deleteMenuItem");
 const pasteConflictModal = document.querySelector("#pasteConflictModal");
 const pasteConflictMessage = document.querySelector("#pasteConflictMessage");
@@ -574,6 +575,60 @@ function deleteSelectedNotes() {
   refreshUi();
 }
 
+function mirrorLane(lane) {
+  return state.laneCount - 1 - lane;
+}
+
+function mirrorNote(note) {
+  const mirrored = structuredClone(note);
+  if (mirrored.type === "curve") {
+    mirrored.points = mirrored.points.map((point) => ({ ...point, lane: mirrorLane(point.lane) }));
+    mirrored.lane = mirrored.points[0]?.lane ?? mirrorLane(mirrored.lane);
+  } else {
+    mirrored.lane = mirrorLane(mirrored.lane);
+  }
+  return mirrored;
+}
+
+function getMirrorConflictPoints(note) {
+  if (note.type === "curve") return note.points.map((point) => ({ time: point.time, lane: point.lane }));
+  return getNoteHitPoints(note);
+}
+
+function mirrorNotesConflict(a, b) {
+  return getMirrorConflictPoints(a).some((pointA) =>
+    getMirrorConflictPoints(b).some((pointB) => pointA.lane === pointB.lane && Math.abs(pointA.time - pointB.time) < tapMinGap)
+  );
+}
+
+function mirrorSelectedNotes() {
+  const selected = getSelectedNotes();
+  if (!selected.length) return;
+  const selectedIds = new Set(selected.map((note) => note.id));
+  const mirroredById = new Map(selected.map((note) => [note.id, mirrorNote(note)]));
+  const nonSelected = state.notes.filter((note) => !selectedIds.has(note.id));
+  const conflictCount = [...mirroredById.values()].filter((mirrored) =>
+    nonSelected.some((existing) => mirrorNotesConflict(existing, mirrored))
+  ).length;
+
+  if (conflictCount) {
+    window.ModalDialog?.alert({
+      title: "Mirror blocked",
+      message: `${conflictCount} mirrored note${conflictCount !== 1 ? "s" : ""} would overlap unselected notes.`,
+      okText: "OK",
+    });
+    return;
+  }
+
+  pushHistory();
+  state.notes.forEach((note) => {
+    const mirrored = mirroredById.get(note.id);
+    if (mirrored) Object.assign(note, mirrored);
+  });
+  sortNotes();
+  refreshUi();
+}
+
 function getClipboardBaseLane(notes) {
   const lanes = notes.flatMap((note) => (note.type === "curve" ? note.points.map((point) => point.lane) : [note.lane]));
   return Math.min(...lanes);
@@ -665,6 +720,7 @@ function hideContextMenu() {
 function showContextMenu(clientX, clientY, targetTime, targetLane) {
   state.contextTarget = { time: targetTime, lane: targetLane };
   copyMenuItem.disabled = state.selectedNoteIds.size === 0;
+  mirrorSelectedMenuItem.disabled = state.selectedNoteIds.size === 0;
   deleteMenuItem.disabled = state.selectedNoteIds.size === 0;
   pasteWithLaneMenuItem.disabled = state.copiedNotes.length === 0;
   pasteTimeOnlyMenuItem.disabled = state.copiedNotes.length === 0;
@@ -2820,6 +2876,15 @@ pasteTimeOnlyMenuItem.addEventListener("click", () => {
   hideContextMenu();
 });
 
+mirrorSelectedMenuItem.addEventListener("click", () => {
+  if (mirrorSelectedMenuItem.disabled) {
+    hideContextMenu();
+    return;
+  }
+  mirrorSelectedNotes();
+  hideContextMenu();
+});
+
 deleteMenuItem.addEventListener("click", () => {
   if (deleteMenuItem.disabled) {
     hideContextMenu();
@@ -3144,6 +3209,7 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     closeEditMetaModal();
     closeMetaKeyDefModal();
+    window.ModalDialog?.hideAlert();
     hidePasteConflictModal();
     hideContextMenu();
     cancelEditPoint();
