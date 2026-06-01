@@ -2099,14 +2099,6 @@ function exportLevel() {
     offsetMs: getOffsetMs(),
     lanes: state.laneCount,
     duration: Number((state.duration || 0).toFixed(3)),
-    metaKeyDefs: state.metaKeyDefs.map((d) => ({
-      key: d.key,
-      defaultValue: d.defaultValue,
-      values: (d.values || []).map((v) => ({ value: v.value, color: v.color })),
-    })),
-    colorMode: state.colorMode,
-    colorByKey: state.colorByKey,
-    typeColors: { ...state.typeColors },
     notes: state.notes.map((note) => ({
       id: note.id,
       time: note.time,
@@ -2116,6 +2108,14 @@ function exportLevel() {
       ...(note.type === "curve" ? { points: note.points.map((point) => ({ ...point })) } : {}),
       meta: note.meta || [],
     })),
+    metaKeyDefs: state.metaKeyDefs.map((d) => ({
+      key: d.key,
+      defaultValue: d.defaultValue,
+      values: (d.values || []).map((v) => ({ value: v.value, color: v.color })),
+    })),
+    colorMode: state.colorMode,
+    colorByKey: state.colorByKey,
+    typeColors: { ...state.typeColors },
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
