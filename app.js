@@ -545,8 +545,8 @@ function getNoteLaneDisplay(note) {
   return note.points.map((point) => point.lane + 1).join(" -> ");
 }
 
-function selectNotes(ids) {
-  state.selectedNoteIds = new Set(ids);
+function selectNotes(ids, append = false) {
+  state.selectedNoteIds = append ? new Set([...state.selectedNoteIds, ...ids]) : new Set(ids);
   refreshUi();
 }
 
@@ -1910,15 +1910,15 @@ function setAudioEnabled(enabled) {
   exportButton.disabled = false;
 }
 
-function addNote(time, lane) {
+function addNote(time, lane, appendSelection = false) {
   if (!state.duration) return;
   const type = noteType.value;
   if (type === "curve") {
-    addCurvePoint(time, lane);
+    addCurvePoint(time, lane, appendSelection);
     return;
   }
   if (type === "hold") {
-    addHoldPoint(time, lane);
+    addHoldPoint(time, lane, appendSelection);
     return;
   }
   const note = {
@@ -1931,13 +1931,13 @@ function addNote(time, lane) {
   if (hasOverlappingNote(note)) return;
   pushHistory();
   state.notes.push(note);
-  state.selectedNoteIds = new Set([note.id]);
+  state.selectedNoteIds = appendSelection ? new Set([...state.selectedNoteIds, note.id]) : new Set([note.id]);
   sortNotes();
   playCreateNoteSound();
   refreshUi();
 }
 
-function addHoldPoint(time, lane) {
+function addHoldPoint(time, lane, appendSelection = false) {
   const point = {
     time: Number(snapTime(time).toFixed(3)),
     lane,
@@ -1946,7 +1946,7 @@ function addHoldPoint(time, lane) {
   if (!state.activeHoldStart) {
     state.activeHoldStart = point;
     state.holdPreviewPoint = point;
-    state.selectedNoteIds.clear();
+    if (!appendSelection) state.selectedNoteIds.clear();
     playCreateNoteSound();
     refreshUi();
     return;
@@ -1976,7 +1976,7 @@ function addHoldPoint(time, lane) {
 
   pushHistory();
   state.notes.push(note);
-  state.selectedNoteIds = new Set([note.id]);
+  state.selectedNoteIds = appendSelection ? new Set([...state.selectedNoteIds, note.id]) : new Set([note.id]);
   state.activeHoldStart = null;
   state.holdPreviewPoint = null;
   sortNotes();
@@ -2082,7 +2082,7 @@ function commitEditPoint(point) {
   return true;
 }
 
-function addCurvePoint(time, lane) {
+function addCurvePoint(time, lane, appendSelection = false) {
   const point = {
     time: Number(snapTime(time).toFixed(3)),
     lane,
@@ -2101,14 +2101,14 @@ function addCurvePoint(time, lane) {
     pushHistory();
     state.notes.push(curve);
     state.activeCurveId = curve.id;
-    state.selectedNoteIds = new Set([curve.id]);
+    state.selectedNoteIds = appendSelection ? new Set([...state.selectedNoteIds, curve.id]) : new Set([curve.id]);
     playCreateNoteSound();
   } else {
     pushHistory();
     curve.points.push(point);
     curve.time = curve.points[0].time;
     curve.lane = curve.points[0].lane;
-    state.selectedNoteIds = new Set([curve.id]);
+    state.selectedNoteIds = appendSelection ? new Set([...state.selectedNoteIds, curve.id]) : new Set([curve.id]);
     playCreateNoteSound();
   }
 
@@ -2454,6 +2454,7 @@ canvas.addEventListener("pointerdown", (event) => {
     currentY: y,
     lane,
     noteId: note?.id || null,
+    appendSelection: event.ctrlKey || event.metaKey,
     moved: false,
   };
   canvas.setPointerCapture(event.pointerId);
@@ -2522,15 +2523,15 @@ canvas.addEventListener("pointerup", (event) => {
   state.selectionDrag = null;
   canvas.releasePointerCapture(event.pointerId);
   if (drag.moved) {
-    selectNotes(findNotesInRect(drag, metrics));
+    selectNotes(findNotesInRect(drag, metrics), drag.appendSelection);
     return;
   }
   if (drag.noteId) {
-    selectNotes([drag.noteId]);
+    selectNotes([drag.noteId], drag.appendSelection);
     return;
   }
   state.selectedLane = drag.lane;
-  addNote(timeFromX(drag.startX, metrics), drag.lane);
+  addNote(timeFromX(drag.startX, metrics), drag.lane, drag.appendSelection);
 });
 
 canvas.addEventListener("pointercancel", () => {
