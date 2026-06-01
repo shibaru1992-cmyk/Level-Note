@@ -94,7 +94,9 @@ const editMetaAddRowBtn = document.querySelector("#editMetaAddRowBtn");
 const editMetaApply = document.querySelector("#editMetaApply");
 const editMetaCancel = document.querySelector("#editMetaCancel");
 const hitSoundInput = document.querySelector("#hitSoundInput");
+const createNoteSoundInput = document.querySelector("#createNoteSoundInput");
 const hitSoundVol = document.querySelector("#hitSoundVol");
+const createNoteSoundVol = document.querySelector("#createNoteSoundVol");
 const metronomeInput = document.querySelector("#metronomeInput");
 const metronomeVol = document.querySelector("#metronomeVol");
 const rateGroup = document.querySelector(".rate-group");
@@ -309,6 +311,39 @@ function playHitSound(volume) {
   oscGain.connect(ac.destination);
   osc.start(now);
   osc.stop(now + 0.04);
+}
+
+function playCreateNoteSound() {
+  if (!createNoteSoundInput.checked) return;
+  const ac = getSharedAc();
+  if (!ac) return;
+  const now = ac.currentTime;
+  const volume = Number(createNoteSoundVol.value);
+
+  const osc = ac.createOscillator();
+  const gain = ac.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(420, now);
+  osc.frequency.exponentialRampToValueAtTime(600, now + 0.03);
+  osc.frequency.exponentialRampToValueAtTime(480, now + 0.06);
+  gain.gain.setValueAtTime(0.001, now);
+  gain.gain.linearRampToValueAtTime(volume * 0.14, now + 0.006);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+  osc.connect(gain);
+  gain.connect(ac.destination);
+  osc.start(now);
+  osc.stop(now + 0.075);
+
+  const click = ac.createOscillator();
+  const clickGain = ac.createGain();
+  click.type = "sine";
+  click.frequency.setValueAtTime(700, now);
+  clickGain.gain.setValueAtTime(volume * 0.04, now);
+  clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.015);
+  click.connect(clickGain);
+  clickGain.connect(ac.destination);
+  click.start(now);
+  click.stop(now + 0.018);
 }
 
 function playMetronomeSound(isDownbeat, volume) {
@@ -1857,6 +1892,7 @@ function addNote(time, lane) {
   state.notes.push(note);
   state.selectedNoteIds = new Set([note.id]);
   sortNotes();
+  playCreateNoteSound();
   refreshUi();
 }
 
@@ -1870,6 +1906,7 @@ function addHoldPoint(time, lane) {
     state.activeHoldStart = point;
     state.holdPreviewPoint = point;
     state.selectedNoteIds.clear();
+    playCreateNoteSound();
     refreshUi();
     return;
   }
@@ -1902,6 +1939,7 @@ function addHoldPoint(time, lane) {
   state.activeHoldStart = null;
   state.holdPreviewPoint = null;
   sortNotes();
+  playCreateNoteSound();
   refreshUi();
 }
 
@@ -2023,12 +2061,14 @@ function addCurvePoint(time, lane) {
     state.notes.push(curve);
     state.activeCurveId = curve.id;
     state.selectedNoteIds = new Set([curve.id]);
+    playCreateNoteSound();
   } else {
     pushHistory();
     curve.points.push(point);
     curve.time = curve.points[0].time;
     curve.lane = curve.points[0].lane;
     state.selectedNoteIds = new Set([curve.id]);
+    playCreateNoteSound();
   }
 
   sortNotes();
