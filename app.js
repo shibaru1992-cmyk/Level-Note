@@ -299,6 +299,12 @@ function getMinNoteGap() {
 }
 
 let sharedAc = null;
+const HIT_SOUND_NOISE_GAIN = 1.05;
+const HIT_SOUND_BODY_GAIN = 0.62;
+const CREATE_NOTE_BODY_GAIN = 0.5;
+const CREATE_NOTE_CLICK_GAIN = 0.18;
+const METRONOME_GAIN = 0.45;
+
 function getSharedAc() {
   const Cls = window.AudioContext || window.webkitAudioContext;
   if (!Cls) return null;
@@ -332,7 +338,7 @@ function playHitSound(volume) {
   filter.frequency.value = 2000;
   filter.Q.value = 0.8;
   const noiseGain = ac.createGain();
-  noiseGain.gain.setValueAtTime(volume * 0.35, now);
+  noiseGain.gain.setValueAtTime(volume * HIT_SOUND_NOISE_GAIN, now);
   noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.015);
   noise.connect(filter);
   filter.connect(noiseGain);
@@ -346,7 +352,7 @@ function playHitSound(volume) {
   osc.type = "sine";
   osc.frequency.setValueAtTime(800, now);
   osc.frequency.exponentialRampToValueAtTime(400, now + 0.035);
-  oscGain.gain.setValueAtTime(volume * 0.2, now);
+  oscGain.gain.setValueAtTime(volume * HIT_SOUND_BODY_GAIN, now);
   oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
   osc.connect(oscGain);
   oscGain.connect(ac.destination);
@@ -368,7 +374,7 @@ function playCreateNoteSound() {
   osc.frequency.exponentialRampToValueAtTime(600, now + 0.03);
   osc.frequency.exponentialRampToValueAtTime(480, now + 0.06);
   gain.gain.setValueAtTime(0.001, now);
-  gain.gain.linearRampToValueAtTime(volume * 0.14, now + 0.006);
+  gain.gain.linearRampToValueAtTime(volume * CREATE_NOTE_BODY_GAIN, now + 0.006);
   gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
   osc.connect(gain);
   gain.connect(ac.destination);
@@ -379,7 +385,7 @@ function playCreateNoteSound() {
   const clickGain = ac.createGain();
   click.type = "sine";
   click.frequency.setValueAtTime(700, now);
-  clickGain.gain.setValueAtTime(volume * 0.04, now);
+  clickGain.gain.setValueAtTime(volume * CREATE_NOTE_CLICK_GAIN, now);
   clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.015);
   click.connect(clickGain);
   clickGain.connect(ac.destination);
@@ -394,7 +400,7 @@ function playMetronomeSound(isDownbeat, volume) {
   const gain = ac.createGain();
   osc.type = "square";
   osc.frequency.setValueAtTime(isDownbeat ? 1000 : 660, ac.currentTime);
-  gain.gain.setValueAtTime(volume * 0.1, ac.currentTime);
+  gain.gain.setValueAtTime(volume * METRONOME_GAIN, ac.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.035);
   osc.connect(gain);
   gain.connect(ac.destination);
