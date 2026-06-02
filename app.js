@@ -1,5 +1,6 @@
 const audioInput = document.querySelector("#audioInput");
 const levelInput = document.querySelector("#levelInput");
+const midiInput = document.querySelector("#midiInput");
 const exportButton = document.querySelector("#exportButton");
 const playButton = document.querySelector("#playButton");
 const stopButton = document.querySelector("#stopButton");
@@ -96,6 +97,22 @@ const editMetaAddValue = document.querySelector("#editMetaAddValue");
 const editMetaAddRowBtn = document.querySelector("#editMetaAddRowBtn");
 const editMetaApply = document.querySelector("#editMetaApply");
 const editMetaCancel = document.querySelector("#editMetaCancel");
+const midiImportElements = {
+  modal: document.querySelector("#midiImportModal"),
+  summary: document.querySelector("#midiImportSummary"),
+  track: document.querySelector("#midiImportTrack"),
+  timingMode: document.querySelector("#midiImportTimingMode"),
+  overrideBpm: document.querySelector("#midiImportOverrideBpm"),
+  laneCount: document.querySelector("#midiImportLaneCount"),
+  pitchLow: document.querySelector("#midiImportPitchLow"),
+  pitchHigh: document.querySelector("#midiImportPitchHigh"),
+  holdThreshold: document.querySelector("#midiImportHoldThreshold"),
+  quantize: document.querySelector("#midiImportQuantize"),
+  applyMode: document.querySelector("#midiImportApplyMode"),
+  laneMap: document.querySelector("#midiImportLaneMap"),
+  apply: document.querySelector("#midiImportApply"),
+  cancel: document.querySelector("#midiImportCancel"),
+};
 const hitSoundInput = document.querySelector("#hitSoundInput");
 const createNoteSoundInput = document.querySelector("#createNoteSoundInput");
 const hitSoundVol = document.querySelector("#hitSoundVol");
@@ -217,6 +234,13 @@ const noteAutomation = createNoteAutomation({
   xFromTime,
   getLanes,
   getNoteSize,
+});
+
+const midiImporter = createMidiImporter({
+  elements: midiImportElements,
+  getEditorBpm: () => Number(bpmInput.value) || 120,
+  quantizeTime: (time) => snapTime(time),
+  onApply: applyMidiImport,
 });
 
 function getLanes() {
@@ -2428,6 +2452,52 @@ function exportLevel() {
   URL.revokeObjectURL(url);
 }
 
+function applyMidiImport(imported) {
+  const notes = Array.isArray(imported.notes) ? imported.notes : [];
+  if (!notes.length) return;
+  pushHistory();
+  const nextLaneCount = clamp(Math.round(Number(imported.laneCount) || state.laneCount), Number(laneCountInput.min), Number(laneCountInput.max));
+  state.laneCount = nextLaneCount;
+  laneCountInput.value = state.laneCount;
+  if (Number.isFinite(Number(imported.bpm))) bpmInput.value = clamp(Math.round(Number(imported.bpm)), Number(bpmInput.min), Number(bpmInput.max));
+
+  const normalized = notes
+    .map((note) =>
+      normalizeNote({
+        id: createNoteId(),
+        time: Number(note.time),
+        lane: clamp(Math.round(Number(note.lane)), 0, state.laneCount - 1),
+        type: note.type === "hold" ? "hold" : "tap",
+        ...(note.type === "hold" ? { duration: Number(note.duration) || 0 } : {}),
+        meta: [],
+      }),
+    )
+    .filter((note) => note.time >= 0 && note.lane >= 0 && note.lane < state.laneCount);
+
+  if (imported.mode === "replace") {
+    state.notes = removeOverlappingNotes(normalized);
+  } else {
+    normalized.forEach((note) => {
+      if (!hasOverlappingNote(note)) state.notes.push(note);
+    });
+  }
+
+  const midiDuration = normalized.reduce((max, note) => Math.max(max, note.time + (note.duration || 0)), 0);
+  if (!state.duration && midiDuration > 0) {
+    state.duration = Number(midiDuration.toFixed(3));
+    resetView();
+  }
+  if (!state.songName && imported.sourceName) {
+    state.songName = imported.sourceName;
+    songMeta.textContent = imported.sourceName;
+  }
+  state.selectedNoteIds.clear();
+  state.activeCurveId = null;
+  state.activeHoldStart = null;
+  sortNotes();
+  refreshUi();
+}
+
 function importLevel(file) {
   const reader = new FileReader();
   reader.onload = () => {
@@ -3428,6 +3498,24 @@ inspectorResizeHandle.addEventListener("pointercancel", () => {
 levelInput.addEventListener("change", () => {
   const file = levelInput.files[0];
   if (file) importLevel(file);
+  levelInput.value = "";
+});
+
+midiInput.addEventListener("change", () => {
+  const file = midiInput.files[0];
+  if (file) {
+    midiImportElements.laneCount.value = state.laneCount;
+    midiImportElements.overrideBpm.value = Number(bpmInput.value) || 120;
+    midiImporter.open(file).catch((err) => {
+      console.error(err);
+      window.ModalDialog?.alert({
+        title: "MIDI import failed",
+        message: err.message || "Could not parse this MIDI file.",
+        okText: "OK",
+      });
+    });
+  }
+  midiInput.value = "";
 });
 
 rateGroup.addEventListener("click", (event) => {
@@ -3473,6 +3561,7 @@ window.addEventListener("keydown", (event) => {
     hidePasteConflictModal();
     hideContextMenu();
     hideLoopContextMenu();
+    midiImporter.close();
     cancelEditPoint();
     cancelActiveHold();
     finishActiveCurve();

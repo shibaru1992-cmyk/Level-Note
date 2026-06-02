@@ -23,6 +23,10 @@
             <input id="levelInput" type="file" accept="application/json,.json" />
             Import JSON
           </label>
+          <label class="file-button secondary">
+            <input id="midiInput" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" />
+            MIDI
+          </label>
           <button id="exportButton" type="button">Export JSON</button>
         </div>
       </header>
@@ -453,10 +457,67 @@
       </div>
     </div>
 
+    <div id="midiImportModal" class="modal-backdrop" hidden>
+      <div class="modal-card midi-import-card" role="dialog" aria-modal="true" aria-labelledby="midiImportTitle">
+        <h2 id="midiImportTitle">MIDI Importer</h2>
+        <p id="midiImportSummary" class="modal-usage-info">No MIDI loaded.</p>
+        <div class="midi-import-grid">
+          <label>
+            <span>Track</span>
+            <select id="midiImportTrack"></select>
+          </label>
+          <label>
+            <span>Timing</span>
+            <select id="midiImportTimingMode">
+              <option value="tempoMap">Tempo map</option>
+              <option value="overrideBpm">Override BPM</option>
+            </select>
+          </label>
+          <label>
+            <span>Override BPM</span>
+            <input id="midiImportOverrideBpm" type="number" min="40" max="300" step="1" value="120" />
+          </label>
+          <label>
+            <span>Lane count</span>
+            <input id="midiImportLaneCount" type="number" min="1" max="12" step="1" value="4" />
+          </label>
+          <label>
+            <span>Pitch low</span>
+            <input id="midiImportPitchLow" type="number" min="0" max="127" step="1" value="48" />
+          </label>
+          <label>
+            <span>Pitch high</span>
+            <input id="midiImportPitchHigh" type="number" min="0" max="127" step="1" value="84" />
+          </label>
+          <label>
+            <span>Hold threshold ms</span>
+            <input id="midiImportHoldThreshold" type="number" min="1" max="5000" step="10" value="180" />
+          </label>
+          <label>
+            <span>Import mode</span>
+            <select id="midiImportApplyMode">
+              <option value="replace">Replace notes</option>
+              <option value="merge">Merge notes</option>
+            </select>
+          </label>
+          <label class="midi-import-inline">
+            <input id="midiImportQuantize" type="checkbox" />
+            <span>Quantize to editor grid</span>
+          </label>
+        </div>
+        <div id="midiImportLaneMap" class="midi-lane-map"></div>
+        <div class="modal-actions">
+          <button id="midiImportApply" type="button" class="btn-accent">Import</button>
+          <button id="midiImportCancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <audio id="audio" preload="metadata"></audio>
     <script src="analysis.js"></script>
     <script src="noteAutomation.js"></script>
     <script src="modalDialog.js"></script>
+    <script src="midiImporter.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
