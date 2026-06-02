@@ -97,6 +97,8 @@
           <div class="hint-row">
             <span>Click timeline de dat note</span>
             <span>Click ruler de move playhead</span>
+            <span>Ctrl+click ruler dat loop A/B</span>
+            <span>Right click loop de remove</span>
             <span>Right click note de xoa</span>
             <span>Mouse wheel zoom</span>
             <span>Drag minimap de move</span>
@@ -389,6 +391,9 @@
       <button id="pasteTimeOnlyMenuItem" type="button">Paste time only</button>
       <button id="mirrorSelectedMenuItem" type="button">Mirror selected</button>
       <button id="deleteMenuItem" class="danger-item" type="button">Delete</button>
+    </div>
+    <div id="loopContextMenu" class="context-menu" hidden>
+      <button id="removeLoopMenuItem" class="danger-item" type="button">Remove loop</button>
     </div>
 
     <div id="pasteConflictModal" class="modal-backdrop" hidden>

@@ -56,11 +56,13 @@ const laneCountInput = document.querySelector("#laneCount");
 const lpbInput = document.querySelector("#lpbInput");
 const offsetInput = document.querySelector("#offsetInput");
 const contextMenu = document.querySelector("#contextMenu");
+const loopContextMenu = document.querySelector("#loopContextMenu");
 const copyMenuItem = document.querySelector("#copyMenuItem");
 const pasteWithLaneMenuItem = document.querySelector("#pasteWithLaneMenuItem");
 const pasteTimeOnlyMenuItem = document.querySelector("#pasteTimeOnlyMenuItem");
 const mirrorSelectedMenuItem = document.querySelector("#mirrorSelectedMenuItem");
 const deleteMenuItem = document.querySelector("#deleteMenuItem");
+const removeLoopMenuItem = document.querySelector("#removeLoopMenuItem");
 const pasteConflictModal = document.querySelector("#pasteConflictModal");
 const pasteConflictMessage = document.querySelector("#pasteConflictMessage");
 const replacePasteButton = document.querySelector("#replacePasteButton");
@@ -142,6 +144,8 @@ const state = {
   selectionDrag: null,
   timelineSeekDrag: null,
   timelineRulerHover: null,
+  pendingLoopStart: null,
+  loopRange: null,
   suppressNextPointerUp: false,
   copiedNotes: [],
   contextTarget: null,
@@ -730,7 +734,27 @@ function hideContextMenu() {
   contextMenu.hidden = true;
 }
 
+function hideLoopContextMenu() {
+  loopContextMenu.hidden = true;
+}
+
+function hideAllContextMenus() {
+  hideContextMenu();
+  hideLoopContextMenu();
+}
+
+function showLoopContextMenu(clientX, clientY) {
+  hideContextMenu();
+  loopContextMenu.hidden = false;
+  const rect = loopContextMenu.getBoundingClientRect();
+  const x = Math.min(clientX, window.innerWidth - rect.width - 8);
+  const y = Math.min(clientY, window.innerHeight - rect.height - 8);
+  loopContextMenu.style.left = `${Math.max(8, x)}px`;
+  loopContextMenu.style.top = `${Math.max(8, y)}px`;
+}
+
 function showContextMenu(clientX, clientY, targetTime, targetLane) {
+  hideLoopContextMenu();
   state.contextTarget = { time: targetTime, lane: targetLane };
   copyMenuItem.disabled = state.selectedNoteIds.size === 0;
   mirrorSelectedMenuItem.disabled = state.selectedNoteIds.size === 0;
@@ -889,6 +913,48 @@ function seekTimelineToX(x, metrics) {
   refreshUi();
 }
 
+function setLoopPoint(time) {
+  if (!state.duration) return;
+  const point = Number(clamp(time, 0, state.duration).toFixed(3));
+  if (state.loopRange) {
+    state.loopRange = null;
+    state.pendingLoopStart = point;
+    draw();
+    return;
+  }
+  if (state.pendingLoopStart === null) {
+    state.pendingLoopStart = point;
+    draw();
+    return;
+  }
+  if (Math.abs(point - state.pendingLoopStart) < 0.01) {
+    state.pendingLoopStart = point;
+    draw();
+    return;
+  }
+  state.loopRange = {
+    start: Math.min(state.pendingLoopStart, point),
+    end: Math.max(state.pendingLoopStart, point),
+  };
+  state.pendingLoopStart = null;
+  if (audio.currentTime < state.loopRange.start || audio.currentTime > state.loopRange.end) {
+    audio.currentTime = state.loopRange.start;
+  }
+  refreshUi();
+}
+
+function clearLoopRange() {
+  if (!state.loopRange && state.pendingLoopStart === null) return false;
+  state.loopRange = null;
+  state.pendingLoopStart = null;
+  draw();
+  return true;
+}
+
+function isTimeInLoopRange(time) {
+  return !!state.loopRange && time >= state.loopRange.start && time <= state.loopRange.end;
+}
+
 function updateTimelineRulerHover(x, y, metrics) {
   const nextHover = isInTimelineRuler(x, y, metrics)
     ? {
@@ -941,6 +1007,7 @@ function draw() {
   ctx.stroke();
 
   drawBeatGrid(metrics);
+  drawLoopRange(metrics);
   drawWaveform(metrics);
   drawNotes(metrics);
   if (typeof noteAutomation !== "undefined" && noteAutomation.isPreviewing()) {
@@ -1306,6 +1373,53 @@ function drawPlayhead(metrics) {
   ctx.lineTo(x, metrics.height - metrics.padding.bottom);
   ctx.stroke();
   ctx.lineWidth = 1;
+}
+
+function drawLoopMarker(x, label, metrics) {
+  ctx.fillStyle = "rgba(69, 211, 154, 0.95)";
+  ctx.strokeStyle = "rgba(11, 13, 15, 0.85)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x - 8, 4, 16, 18, 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#07110d";
+  ctx.font = "11px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, x, 13.5);
+  ctx.strokeStyle = "rgba(69, 211, 154, 0.85)";
+  ctx.beginPath();
+  ctx.moveTo(x + 0.5, metrics.padding.top);
+  ctx.lineTo(x + 0.5, metrics.height - metrics.padding.bottom);
+  ctx.stroke();
+}
+
+function drawLoopRange(metrics) {
+  const hasRange = state.loopRange && state.loopRange.end > state.loopRange.start;
+  const hasPending = state.pendingLoopStart !== null;
+  if (!state.duration || (!hasRange && !hasPending)) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(metrics.padding.left, 0, metrics.plotWidth, metrics.height - metrics.padding.bottom);
+  ctx.clip();
+  if (hasRange) {
+    const startX = xFromTime(state.loopRange.start, metrics);
+    const endX = xFromTime(state.loopRange.end, metrics);
+    const left = Math.max(metrics.padding.left, Math.min(startX, endX));
+    const right = Math.min(metrics.width - metrics.padding.right, Math.max(startX, endX));
+    if (right > left) {
+      ctx.fillStyle = "rgba(69, 211, 154, 0.12)";
+      ctx.fillRect(left, metrics.padding.top, right - left, metrics.height - metrics.padding.bottom - metrics.padding.top);
+      ctx.fillStyle = "rgba(69, 211, 154, 0.18)";
+      ctx.fillRect(left, 0, right - left, metrics.padding.top);
+    }
+    drawLoopMarker(startX, "A", metrics);
+    drawLoopMarker(endX, "B", metrics);
+  } else {
+    drawLoopMarker(xFromTime(state.pendingLoopStart, metrics), "A", metrics);
+  }
+  ctx.restore();
 }
 
 function drawTimelineRulerHover(metrics) {
@@ -2474,7 +2588,11 @@ async function buildWaveform(file) {
 let lastTickTime = -1;
 
 function animationTick() {
-  const current = audio.currentTime || 0;
+  let current = audio.currentTime || 0;
+  if (!audio.paused && state.loopRange && current >= state.loopRange.end) {
+    audio.currentTime = state.loopRange.start;
+    current = audio.currentTime || state.loopRange.start;
+  }
   currentTimeLabel.textContent = formatTime(current);
   scrub.value = current;
   if (!audio.paused && lastTickTime >= 0 && current > lastTickTime) {
@@ -2561,8 +2679,8 @@ scrub.addEventListener("input", () => {
 
 canvas.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
-  if (!contextMenu.hidden) {
-    hideContextMenu();
+  if (!contextMenu.hidden || !loopContextMenu.hidden) {
+    hideAllContextMenus();
     return;
   }
   const rect = canvas.getBoundingClientRect();
@@ -2570,6 +2688,11 @@ canvas.addEventListener("pointerdown", (event) => {
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
   if (isInTimelineRuler(x, y, metrics)) {
+    if (event.ctrlKey || event.metaKey) {
+      updateTimelineRulerHover(x, y, metrics);
+      if (event.detail < 2) setLoopPoint(timeFromX(x, metrics));
+      return;
+    }
     state.timelineSeekDrag = { pointerId: event.pointerId };
     updateTimelineRulerHover(x, y, metrics);
     seekTimelineToX(x, metrics);
@@ -2729,20 +2852,26 @@ canvas.addEventListener("dblclick", (event) => {
 
 canvas.addEventListener("contextmenu", (event) => {
   event.preventDefault();
-  if (cancelEditPoint()) return;
-  if (finishActiveCurve()) return;
-  if (cancelActiveHold()) return;
   const rect = canvas.getBoundingClientRect();
   const metrics = getCanvasMetrics();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
+  if (isInTimelineRuler(x, y, metrics)) {
+    const time = timeFromX(x, metrics);
+    if (isTimeInLoopRange(time)) showLoopContextMenu(event.clientX, event.clientY);
+    else hideAllContextMenus();
+    return;
+  }
+  if (cancelEditPoint()) return;
+  if (finishActiveCurve()) return;
+  if (cancelActiveHold()) return;
   if (!isInTimePlot(x, y, metrics)) {
-    hideContextMenu();
+    hideAllContextMenus();
     return;
   }
   const lane = laneFromY(y, metrics);
   if (lane === null) {
-    hideContextMenu();
+    hideAllContextMenus();
     return;
   }
   showContextMenu(event.clientX, event.clientY, timeFromX(x, metrics), lane);
@@ -3255,9 +3384,21 @@ contextMenu.addEventListener("pointerdown", (event) => {
   event.stopPropagation();
 });
 
+loopContextMenu.addEventListener("pointerdown", (event) => {
+  event.stopPropagation();
+});
+
+removeLoopMenuItem.addEventListener("click", () => {
+  clearLoopRange();
+  hideLoopContextMenu();
+});
+
 document.addEventListener("pointerdown", (event) => {
   if (!contextMenu.hidden && !contextMenu.contains(event.target)) {
     hideContextMenu();
+  }
+  if (!loopContextMenu.hidden && !loopContextMenu.contains(event.target)) {
+    hideLoopContextMenu();
   }
 });
 
@@ -3331,6 +3472,7 @@ window.addEventListener("keydown", (event) => {
     window.ModalDialog?.hideAlert();
     hidePasteConflictModal();
     hideContextMenu();
+    hideLoopContextMenu();
     cancelEditPoint();
     cancelActiveHold();
     finishActiveCurve();
