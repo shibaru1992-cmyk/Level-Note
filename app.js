@@ -122,7 +122,7 @@ const lanePalette = [
   "#8aa4ff",
 ];
 
-const tapMinGap = 0.08;
+const freeTapMinGap = 0.04;
 
 const DEFAULT_TYPE_COLORS = { tap: "#62a8ff", hold: "#45d39a", curve: "#b98cff" };
 
@@ -256,6 +256,15 @@ function getOffsetSeconds() {
 
 function getNoteSize() {
   return clamp(Number(noteSizeInput.value) || 9, Number(noteSizeInput.min), Number(noteSizeInput.max));
+}
+
+function getMinNoteGap() {
+  const bpm = Number(bpmInput.value);
+  const lpb = getLPB();
+  if (snapInput.checked && bpm > 0 && lpb > 0) {
+    return (60 / bpm / lpb) * 0.49;
+  }
+  return freeTapMinGap;
 }
 
 let sharedAc = null;
@@ -596,8 +605,9 @@ function getMirrorConflictPoints(note) {
 }
 
 function mirrorNotesConflict(a, b) {
+  const minGap = getMinNoteGap();
   return getMirrorConflictPoints(a).some((pointA) =>
-    getMirrorConflictPoints(b).some((pointB) => pointA.lane === pointB.lane && Math.abs(pointA.time - pointB.time) < tapMinGap)
+    getMirrorConflictPoints(b).some((pointB) => pointA.lane === pointB.lane && Math.abs(pointA.time - pointB.time) < minGap)
   );
 }
 
@@ -734,6 +744,7 @@ function showContextMenu(clientX, clientY, targetTime, targetLane) {
 }
 
 function getNoteRange(note) {
+  const minGap = getMinNoteGap();
   if (note.type === "curve") {
     const times = note.points.map((point) => point.time);
     return {
@@ -744,12 +755,12 @@ function getNoteRange(note) {
   if (note.type === "hold") {
     return {
       start: note.time,
-      end: note.time + Math.max(note.duration || 0, tapMinGap),
+      end: note.time + Math.max(note.duration || 0, minGap),
     };
   }
   return {
-    start: note.time - tapMinGap / 2,
-    end: note.time + tapMinGap / 2,
+    start: note.time - minGap / 2,
+    end: note.time + minGap / 2,
   };
 }
 
@@ -766,8 +777,9 @@ function getNoteHitPoints(note) {
 
 function notesOverlap(a, b) {
   if (a.type === "curve" || b.type === "curve") return false;
+  const minGap = getMinNoteGap();
   return getNoteHitPoints(a).some((pointA) =>
-    getNoteHitPoints(b).some((pointB) => pointA.lane === pointB.lane && Math.abs(pointA.time - pointB.time) < tapMinGap)
+    getNoteHitPoints(b).some((pointB) => pointA.lane === pointB.lane && Math.abs(pointA.time - pointB.time) < minGap)
   );
 }
 
