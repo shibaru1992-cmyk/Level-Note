@@ -96,6 +96,7 @@
           <canvas id="minimap" width="1400" height="64"></canvas>
           <div class="hint-row">
             <span>Click timeline de dat note</span>
+            <span>Click ruler de move playhead</span>
             <span>Right click note de xoa</span>
             <span>Mouse wheel zoom</span>
             <span>Drag minimap de move</span>
@@ -326,6 +327,14 @@
                 <select id="automationNoteType">
                   <option value="tap">Tap only</option>
                   <option value="tapHold">Tap + Hold (sustained)</option>
+                </select>
+              </label>
+              <label class="automation-field">
+                <span>Hold amount</span>
+                <select id="automationHoldAmount">
+                  <option value="few" selected>Few (pro-like)</option>
+                  <option value="some">Some</option>
+                  <option value="many">Many</option>
                 </select>
               </label>
               <label class="automation-field">

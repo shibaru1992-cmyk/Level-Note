@@ -140,6 +140,7 @@ const state = {
   isDraggingMinimap: false,
   selectedNoteIds: new Set(),
   selectionDrag: null,
+  timelineSeekDrag: null,
   suppressNextPointerUp: false,
   copiedNotes: [],
   contextTarget: null,
@@ -180,6 +181,7 @@ const automationElements = {
   snapToggle: document.querySelector("#automationSnap"),
   laneStrategy: document.querySelector("#automationLaneStrategy"),
   noteType: document.querySelector("#automationNoteType"),
+  holdAmount: document.querySelector("#automationHoldAmount"),
   npsCap: document.querySelector("#automationNpsCap"),
   timeRange: document.querySelector("#automationTimeRange"),
   bandMapRow: document.querySelector("#automationBandMapRow"),
@@ -871,6 +873,21 @@ function isInTimePlot(x, y, metrics) {
   );
 }
 
+function isInTimelineRuler(x, y, metrics) {
+  return (
+    x >= metrics.padding.left &&
+    x <= metrics.width - metrics.padding.right &&
+    y >= 0 &&
+    y < metrics.padding.top
+  );
+}
+
+function seekTimelineToX(x, metrics) {
+  if (!state.duration) return;
+  audio.currentTime = Number(clamp(timeFromX(x, metrics), 0, state.duration).toFixed(3));
+  refreshUi();
+}
+
 function draw() {
   const metrics = getCanvasMetrics();
   const lanes = getLanes();
@@ -880,6 +897,14 @@ function draw() {
 
   ctx.font = "12px Inter, system-ui, sans-serif";
   ctx.textBaseline = "middle";
+
+  ctx.fillStyle = "#0f1317";
+  ctx.fillRect(metrics.padding.left, 0, metrics.plotWidth, metrics.padding.top);
+  ctx.strokeStyle = "rgba(154, 166, 178, 0.25)";
+  ctx.beginPath();
+  ctx.moveTo(metrics.padding.left, metrics.padding.top - 0.5);
+  ctx.lineTo(metrics.width - metrics.padding.right, metrics.padding.top - 0.5);
+  ctx.stroke();
 
   lanes.forEach((lane, index) => {
     const y = metrics.padding.top + index * metrics.laneHeight;
@@ -1261,7 +1286,7 @@ function drawPlayhead(metrics) {
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(x, metrics.padding.top);
+  ctx.moveTo(x, 0);
   ctx.lineTo(x, metrics.height - metrics.padding.bottom);
   ctx.stroke();
   ctx.lineWidth = 1;
@@ -2491,6 +2516,12 @@ canvas.addEventListener("pointerdown", (event) => {
   const metrics = getCanvasMetrics();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
+  if (isInTimelineRuler(x, y, metrics)) {
+    state.timelineSeekDrag = { pointerId: event.pointerId };
+    seekTimelineToX(x, metrics);
+    canvas.setPointerCapture(event.pointerId);
+    return;
+  }
   if (!isInTimePlot(x, y, metrics)) return;
   const lane = laneFromY(y, metrics);
   if (lane === null) return;
@@ -2533,6 +2564,11 @@ canvas.addEventListener("pointermove", (event) => {
   const metrics = getCanvasMetrics();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
+
+  if (state.timelineSeekDrag) {
+    seekTimelineToX(x, metrics);
+    return;
+  }
 
   if (state.editingPoint) {
     if (isInTimePlot(x, y, metrics)) {
@@ -2585,6 +2621,11 @@ canvas.addEventListener("pointerup", (event) => {
     state.suppressNextPointerUp = false;
     return;
   }
+  if (state.timelineSeekDrag) {
+    state.timelineSeekDrag = null;
+    canvas.releasePointerCapture(event.pointerId);
+    return;
+  }
   if (!state.selectionDrag) return;
   const metrics = getCanvasMetrics();
   const drag = state.selectionDrag;
@@ -2604,6 +2645,7 @@ canvas.addEventListener("pointerup", (event) => {
 
 canvas.addEventListener("pointercancel", () => {
   state.selectionDrag = null;
+  state.timelineSeekDrag = null;
   state.curvePreviewPoint = null;
   state.holdPreviewPoint = null;
   draw();
