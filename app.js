@@ -159,6 +159,7 @@ const state = {
   isDraggingMinimap: false,
   selectedNoteIds: new Set(),
   selectionDrag: null,
+  noteMoveDrag: null,
   timelineSeekDrag: null,
   timelineRulerHover: null,
   pendingLoopStart: null,
@@ -855,6 +856,64 @@ function hasOverlappingNote(note) {
   return state.notes.some((existing) => notesOverlap(existing, note));
 }
 
+function getMoveBoundsPoints(note) {
+  if (note.type === "curve") return note.points;
+  if (note.type === "hold") {
+    return [
+      { time: note.time, lane: note.lane },
+      { time: note.time + (note.duration || 0), lane: note.lane },
+    ];
+  }
+  return [{ time: note.time, lane: note.lane }];
+}
+
+function moveNoteFromOriginal(original, timeDelta, laneDelta) {
+  const note = structuredClone(original);
+  if (note.type === "curve") {
+    note.points = note.points.map((point) => ({
+      time: Number((point.time + timeDelta).toFixed(3)),
+      lane: point.lane + laneDelta,
+    }));
+    note.time = note.points[0]?.time || 0;
+    note.lane = note.points[0]?.lane || 0;
+    return note;
+  }
+  note.time = Number((note.time + timeDelta).toFixed(3));
+  note.lane += laneDelta;
+  return note;
+}
+
+function isMoveCandidateInBounds(note) {
+  return getMoveBoundsPoints(note).every((point) =>
+    point.time >= 0 && point.time <= state.duration && point.lane >= 0 && point.lane < state.laneCount
+  );
+}
+
+function getNoteMoveCandidates(drag, metrics, x, y) {
+  const lane = laneFromY(y, metrics);
+  if (lane === null) return null;
+  const startTime = Number(snapTime(timeFromX(drag.startX, metrics)).toFixed(3));
+  const currentTime = Number(snapTime(timeFromX(x, metrics)).toFixed(3));
+  const timeDelta = Number((currentTime - startTime).toFixed(3));
+  const laneDelta = lane - drag.startLane;
+  const notes = drag.originalNotes.map((note) => moveNoteFromOriginal(note, timeDelta, laneDelta));
+  return { notes, timeDelta, laneDelta };
+}
+
+function canMoveSelectedNotes(candidates, selectedIds) {
+  if (!candidates.every(isMoveCandidateInBounds)) return false;
+  const unselected = state.notes.filter((note) => !selectedIds.has(note.id));
+  return !candidates.some((candidate) => unselected.some((existing) => notesOverlap(existing, candidate)));
+}
+
+function applyMovedNotes(candidates) {
+  const byId = new Map(candidates.map((note) => [note.id, note]));
+  state.notes.forEach((note) => {
+    const moved = byId.get(note.id);
+    if (moved) Object.assign(note, moved);
+  });
+}
+
 function removeOverlappingNotes(notes) {
   const filtered = [];
   notes
@@ -1186,6 +1245,86 @@ function drawBeatGrid(metrics) {
   ctx.textAlign = "left";
 }
 
+function drawNoteMovePreview(metrics) {
+  const previewNotes = state.noteMoveDrag?.previewNotes;
+  if (!previewNotes?.length) return;
+  const noteSize = getNoteSize();
+  ctx.save();
+  ctx.globalAlpha = 0.48;
+  ctx.setLineDash([6, 5]);
+  previewNotes.forEach((note) => {
+    const range = getNoteRange(note);
+    if (range.end < state.viewStart || range.start > state.viewEnd) return;
+    const noteColor = getNoteColor(note);
+    ctx.fillStyle = noteColor;
+    ctx.strokeStyle = "#ffffff";
+    if (note.type === "curve") {
+      for (let index = 0; index < note.points.length - 1; index += 1) {
+        const from = note.points[index];
+        const to = note.points[index + 1];
+        ctx.lineWidth = Math.max(3, noteSize * 0.45);
+        ctx.strokeStyle = getPointColor(note, from.lane);
+        ctx.beginPath();
+        ctx.moveTo(xFromTime(from.time, metrics), metrics.padding.top + from.lane * metrics.laneHeight + metrics.laneHeight / 2);
+        ctx.lineTo(xFromTime(to.time, metrics), metrics.padding.top + to.lane * metrics.laneHeight + metrics.laneHeight / 2);
+        ctx.stroke();
+      }
+      note.points.forEach((point) => {
+        ctx.fillStyle = getPointColor(note, point.lane);
+        ctx.strokeStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(
+          xFromTime(point.time, metrics),
+          metrics.padding.top + point.lane * metrics.laneHeight + metrics.laneHeight / 2,
+          noteSize + 2,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+      return;
+    }
+
+    if (note.type === "hold") {
+      const startX = xFromTime(note.time, metrics);
+      const y = metrics.padding.top + note.lane * metrics.laneHeight + metrics.laneHeight / 2;
+      const endX = xFromTime(note.time + note.duration, metrics);
+      ctx.lineWidth = Math.max(3, noteSize * 0.45);
+      ctx.strokeStyle = noteColor;
+      ctx.beginPath();
+      ctx.moveTo(startX, y);
+      ctx.lineTo(endX, y);
+      ctx.stroke();
+      ctx.fillStyle = noteColor;
+      ctx.strokeStyle = "#ffffff";
+      [startX, endX].forEach((pointX) => {
+        ctx.beginPath();
+        ctx.arc(pointX, y, noteSize + 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+      return;
+    }
+
+    ctx.beginPath();
+    ctx.arc(
+      xFromTime(note.time, metrics),
+      metrics.padding.top + note.lane * metrics.laneHeight + metrics.laneHeight / 2,
+      noteSize + 2,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+  ctx.restore();
+  ctx.lineWidth = 1;
+}
+
 function drawNotes(metrics) {
   const lanes = getLanes();
   const noteSize = getNoteSize();
@@ -1340,6 +1479,8 @@ function drawNotes(metrics) {
     ctx.stroke();
     ctx.lineWidth = 1;
   });
+
+  drawNoteMovePreview(metrics);
 
   if (state.selectionDrag) {
     const { startX, startY, currentX, currentY } = state.selectionDrag;
@@ -2799,6 +2940,31 @@ canvas.addEventListener("pointerdown", (event) => {
 
   const editableHit = findEditablePointAt(x, y, metrics);
   const note = noteType.value === "curve" && state.activeCurveId ? null : editableHit?.note || findNoteAt(x, y, metrics);
+  if (
+    note &&
+    state.selectedNoteIds.has(note.id) &&
+    state.selectedNoteIds.size > 0 &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !state.activeHoldStart &&
+    !state.activeCurveId
+  ) {
+    state.noteMoveDrag = {
+      pointerId: event.pointerId,
+      startX: x,
+      startY: y,
+      startLane: lane,
+      originalNotes: getSelectedNotes().map((selectedNote) => structuredClone(selectedNote)),
+      selectedIds: new Set(state.selectedNoteIds),
+      previewNotes: [],
+      timeDelta: 0,
+      laneDelta: 0,
+      didMove: false,
+    };
+    hideContextMenu();
+    canvas.setPointerCapture(event.pointerId);
+    return;
+  }
   state.selectionDrag = {
     startX: x,
     startY: y,
@@ -2825,6 +2991,21 @@ canvas.addEventListener("pointermove", (event) => {
   }
 
   updateTimelineRulerHover(x, y, metrics);
+
+  if (state.noteMoveDrag) {
+    const drag = state.noteMoveDrag;
+    const movedPixels = Math.abs(x - drag.startX) > 4 || Math.abs(y - drag.startY) > 4;
+    if (!movedPixels) return;
+    const candidates = getNoteMoveCandidates(drag, metrics, x, y);
+    if (!candidates || !canMoveSelectedNotes(candidates.notes, drag.selectedIds)) return;
+    if (candidates.timeDelta === drag.timeDelta && candidates.laneDelta === drag.laneDelta) return;
+    drag.timeDelta = candidates.timeDelta;
+    drag.laneDelta = candidates.laneDelta;
+    drag.didMove = candidates.timeDelta !== 0 || candidates.laneDelta !== 0;
+    drag.previewNotes = drag.didMove ? candidates.notes : [];
+    draw();
+    return;
+  }
 
   if (state.editingPoint) {
     if (isInTimePlot(x, y, metrics)) {
@@ -2882,6 +3063,21 @@ canvas.addEventListener("pointerup", (event) => {
     canvas.releasePointerCapture(event.pointerId);
     return;
   }
+  if (state.noteMoveDrag) {
+    const drag = state.noteMoveDrag;
+    state.noteMoveDrag = null;
+    canvas.releasePointerCapture(event.pointerId);
+    if (drag.didMove && drag.previewNotes.length) {
+      pushHistory();
+      applyMovedNotes(drag.previewNotes);
+      sortNotes();
+      playCreateNoteSound();
+      refreshUi();
+    } else {
+      draw();
+    }
+    return;
+  }
   if (!state.selectionDrag) return;
   const metrics = getCanvasMetrics();
   const drag = state.selectionDrag;
@@ -2900,6 +3096,7 @@ canvas.addEventListener("pointerup", (event) => {
 });
 
 canvas.addEventListener("pointercancel", () => {
+  state.noteMoveDrag = null;
   state.selectionDrag = null;
   state.timelineSeekDrag = null;
   state.timelineRulerHover = null;
