@@ -141,6 +141,7 @@ const state = {
   selectedNoteIds: new Set(),
   selectionDrag: null,
   timelineSeekDrag: null,
+  timelineRulerHover: null,
   suppressNextPointerUp: false,
   copiedNotes: [],
   contextTarget: null,
@@ -888,6 +889,20 @@ function seekTimelineToX(x, metrics) {
   refreshUi();
 }
 
+function updateTimelineRulerHover(x, y, metrics) {
+  const nextHover = isInTimelineRuler(x, y, metrics)
+    ? {
+        x: clamp(x, metrics.padding.left, metrics.width - metrics.padding.right),
+        time: Number(clamp(timeFromX(x, metrics), 0, state.duration || 0).toFixed(3)),
+      }
+    : null;
+  const prev = state.timelineRulerHover;
+  if (prev && nextHover && Math.abs(prev.x - nextHover.x) < 0.5 && prev.time === nextHover.time) return;
+  if (!prev && !nextHover) return;
+  state.timelineRulerHover = nextHover;
+  draw();
+}
+
 function draw() {
   const metrics = getCanvasMetrics();
   const lanes = getLanes();
@@ -932,6 +947,7 @@ function draw() {
     noteAutomation.renderPreview(metrics);
   }
   drawPlayhead(metrics);
+  drawTimelineRulerHover(metrics);
   drawMinimap();
 }
 
@@ -1290,6 +1306,43 @@ function drawPlayhead(metrics) {
   ctx.lineTo(x, metrics.height - metrics.padding.bottom);
   ctx.stroke();
   ctx.lineWidth = 1;
+}
+
+function drawTimelineRulerHover(metrics) {
+  const hover = state.timelineRulerHover;
+  if (!hover || !state.duration) return;
+  const x = clamp(hover.x, metrics.padding.left, metrics.width - metrics.padding.right);
+  ctx.save();
+  ctx.strokeStyle = "rgba(154, 166, 178, 0.72)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(x + 0.5, metrics.padding.top);
+  ctx.lineTo(x + 0.5, metrics.height - metrics.padding.bottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const label = formatTime(hover.time);
+  ctx.font = "11px Inter, system-ui, sans-serif";
+  const textWidth = ctx.measureText(label).width;
+  const labelWidth = textWidth + 12;
+  const labelHeight = 20;
+  const labelGap = 10;
+  const maxLabelX = metrics.width - metrics.padding.right - labelWidth - 4;
+  const labelX = x + labelGap <= maxLabelX ? x + labelGap : Math.max(metrics.padding.left + 4, x - labelWidth - labelGap);
+  const labelY = 4;
+  ctx.fillStyle = "rgba(15, 19, 23, 0.94)";
+  ctx.strokeStyle = "rgba(154, 166, 178, 0.55)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(labelX, labelY, labelWidth, labelHeight, 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#dfe6ee";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, labelX + labelWidth / 2, labelY + labelHeight / 2 + 0.5);
+  ctx.restore();
 }
 
 function refreshUi() {
@@ -2518,6 +2571,7 @@ canvas.addEventListener("pointerdown", (event) => {
   const y = event.clientY - rect.top;
   if (isInTimelineRuler(x, y, metrics)) {
     state.timelineSeekDrag = { pointerId: event.pointerId };
+    updateTimelineRulerHover(x, y, metrics);
     seekTimelineToX(x, metrics);
     canvas.setPointerCapture(event.pointerId);
     return;
@@ -2566,9 +2620,12 @@ canvas.addEventListener("pointermove", (event) => {
   const y = event.clientY - rect.top;
 
   if (state.timelineSeekDrag) {
+    updateTimelineRulerHover(x, 0, metrics);
     seekTimelineToX(x, metrics);
     return;
   }
+
+  updateTimelineRulerHover(x, y, metrics);
 
   if (state.editingPoint) {
     if (isInTimePlot(x, y, metrics)) {
@@ -2646,8 +2703,16 @@ canvas.addEventListener("pointerup", (event) => {
 canvas.addEventListener("pointercancel", () => {
   state.selectionDrag = null;
   state.timelineSeekDrag = null;
+  state.timelineRulerHover = null;
   state.curvePreviewPoint = null;
   state.holdPreviewPoint = null;
+  draw();
+});
+
+canvas.addEventListener("pointerleave", () => {
+  if (state.timelineSeekDrag) return;
+  if (!state.timelineRulerHover) return;
+  state.timelineRulerHover = null;
   draw();
 });
 
