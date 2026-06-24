@@ -543,15 +543,7 @@ function ensureUniqueNoteIds(notes) {
 }
 
 function normalizeNoteMeta(meta) {
-  if (Array.isArray(meta)) {
-    return meta
-      .filter((item) => item && typeof item.key === "string")
-      .map((item) => ({ key: item.key, value: item.value ?? "" }));
-  }
-  if (meta && typeof meta === "object") {
-    return Object.entries(meta).map(([key, value]) => ({ key, value: value ?? "" }));
-  }
-  return [];
+  return LevelJson.normalizeMetadata(meta);
 }
 
 function normalizeNote(note) {
@@ -564,6 +556,7 @@ function normalizeNote(note) {
       ];
     }
     note.points = note.points
+      .map(LevelJson.fromJsonPoint)
       .filter((point) => point && Number.isFinite(Number(point.time)) && Number.isFinite(Number(point.lane)))
       .map((point) => ({
         time: Number(point.time),
@@ -2557,32 +2550,11 @@ function finishActiveCurve() {
 
 function exportLevel() {
   ensureUniqueNoteIds(state.notes);
-  const payload = {
-    version: 1,
-    song: state.songName || "untitled",
-    bpm: Number(bpmInput.value),
+  const payload = LevelJson.toJsonPayload(state, {
+    bpm: bpmInput.value,
     lpb: getLPB(),
     offsetMs: getOffsetMs(),
-    lanes: state.laneCount,
-    duration: Number((state.duration || 0).toFixed(3)),
-    notes: state.notes.map((note) => ({
-      id: note.id,
-      time: note.time,
-      lane: note.lane,
-      type: note.type,
-      ...(note.type === "hold" ? { duration: note.duration } : {}),
-      ...(note.type === "curve" ? { points: note.points.map((point) => ({ ...point })) } : {}),
-      meta: normalizeNoteMeta(note.meta),
-    })),
-    metaKeyDefs: state.metaKeyDefs.map((d) => ({
-      key: d.key,
-      defaultValue: d.defaultValue,
-      values: (d.values || []).map((v) => ({ value: v.value, color: v.color })),
-    })),
-    colorMode: state.colorMode,
-    colorByKey: state.colorByKey,
-    typeColors: { ...state.typeColors },
-  };
+  });
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -2643,13 +2615,13 @@ function importLevel(file) {
   reader.onload = () => {
     const data = JSON.parse(reader.result);
     pushHistory();
-    const importedLaneCount = Number(data.lanes);
+    const importedLaneCount = LevelJson.getDeclaredLaneCount(data);
     if (Number.isInteger(importedLaneCount)) {
       state.laneCount = clamp(importedLaneCount, Number(laneCountInput.min), Number(laneCountInput.max));
     }
     state.selectedLane = clamp(state.selectedLane, 0, state.laneCount - 1);
     const importedNotes = Array.isArray(data.notes)
-      ? data.notes.map(normalizeNote).filter((note) => note.lane >= 0 && note.lane < state.laneCount)
+      ? data.notes.map((note) => normalizeNote(LevelJson.fromJsonNote(note))).filter((note) => note.lane >= 0 && note.lane < state.laneCount)
       : [];
     state.notes = ensureUniqueNoteIds(removeOverlappingNotes(importedNotes));
     state.selectedNoteIds.clear();

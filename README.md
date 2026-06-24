@@ -25,14 +25,14 @@ Web tool tinh gon de cham note theo MP3 cho music game.
   "song": "track.mp3",
   "bpm": 120,
   "lpb": 4,
-  "lanes": 4,
+  "declaredLaneCount": 4,
   "duration": 123.456,
   "notes": [
-    { "time": 1.25, "lane": 0, "type": "tap", "meta": [{ "key": "spawn", "value": "left" }] },
-    { "time": 2.5, "lane": 2, "type": "hold", "duration": 0.75, "meta": [] },
-    { "time": 4.0, "lane": 1, "type": "curve", "points": [{ "time": 4.0, "lane": 0 }, { "time": 4.5, "lane": 1 }], "meta": [] }
+    { "startTime": 1.25, "lane": 0, "type": "tap", "metadata": [{ "key": "spawn", "value": "left" }] },
+    { "startTime": 2.5, "lane": 2, "type": "hold", "duration": 0.75, "metadata": [] },
+    { "startTime": 4.0, "lane": 1, "type": "curve", "curvePoints": [{ "startTime": 4.0, "lane": 0 }, { "startTime": 4.5, "lane": 1 }], "metadata": [] }
   ]
 }
 ```
 
-`time` va `duration` tinh bang giay. `lane` bat dau tu `0`.
+`startTime` va `duration` tinh bang giay. `lane` bat dau tu `0`.
