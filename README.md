@@ -30,7 +30,7 @@ Web tool tinh gon de cham note theo MP3 cho music game.
   "notes": [
     { "startTime": 1.25, "lane": 0, "type": "tap", "metadata": [{ "key": "spawn", "value": "left" }] },
     { "startTime": 2.5, "lane": 2, "type": "hold", "duration": 0.75, "metadata": [] },
-    { "startTime": 4.0, "lane": 1, "type": "curve", "curvePoints": [{ "startTime": 4.0, "lane": 0 }, { "startTime": 4.5, "lane": 1 }], "metadata": [] }
+    { "startTime": 4.0, "lane": 1, "type": "curve", "duration": 0.5, "curvePoints": [{ "startTime": 4.0, "lane": 0 }, { "startTime": 4.5, "lane": 1 }], "metadata": [] }
   ]
 }
 ```

@@ -36,6 +36,14 @@
     };
   }
 
+  function getCurveDuration(note) {
+    const points = Array.isArray(note.points) ? note.points : [];
+    if (points.length < 2) return 0;
+    const firstTime = Number(points[0].time) || 0;
+    const lastTime = Number(points[points.length - 1].time) || firstTime;
+    return Number(Math.max(0, lastTime - firstTime).toFixed(3));
+  }
+
   function toJsonNote(note) {
     return {
       id: note.id,
@@ -43,7 +51,7 @@
       lane: note.lane,
       type: note.type,
       ...(note.type === "hold" ? { duration: note.duration } : {}),
-      ...(note.type === "curve" ? { curvePoints: note.points.map(toJsonPoint) } : {}),
+      ...(note.type === "curve" ? { duration: getCurveDuration(note), curvePoints: note.points.map(toJsonPoint) } : {}),
       metadata: normalizeMetadata(note.meta),
     };
   }
