@@ -554,13 +554,6 @@ function normalizeNoteMeta(meta) {
   return [];
 }
 
-function noteMetaToDictionary(meta) {
-  return normalizeNoteMeta(meta).reduce((dict, item) => {
-    dict[item.key] = item.value;
-    return dict;
-  }, {});
-}
-
 function normalizeNote(note) {
   if (!note.id) note.id = createNoteId();
   if (note.type === "curve") {
@@ -2579,7 +2572,7 @@ function exportLevel() {
       type: note.type,
       ...(note.type === "hold" ? { duration: note.duration } : {}),
       ...(note.type === "curve" ? { points: note.points.map((point) => ({ ...point })) } : {}),
-      meta: noteMetaToDictionary(note.meta),
+      meta: normalizeNoteMeta(note.meta),
     })),
     metaKeyDefs: state.metaKeyDefs.map((d) => ({
       key: d.key,
